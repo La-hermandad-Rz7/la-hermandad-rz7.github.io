@@ -89,8 +89,8 @@ const allowId=!!(p&&supreme);
 let initialQuestions=questions.length?questions.map(q=>({question:q.question,points:q.points||1,options:(q.rz7_proof_options||[]).map(o=>({label:o.label,is_correct:!!o.is_correct}))})):[{question:'',points:1,options:[{label:'A',is_correct:true},{label:'B',is_correct:false}]}];
 
 document.getElementById('adminContent').innerHTML='<div class="card"><h2>📝 '+(p?'EDITAR PROVA':'CRIAR PROVA')+'</h2><form id="pf" class="form">'+
-'<label>Número da prova</label><input name="number" type="number" value="'+next+'" readonly>'+
-'<label>Código da prova</label><input name="code" value="'+esc(code)+'" readonly>'+
+'<label>Número da prova</label><input name="number" type="number" value="'+next+'" '+(p&&!allowId?'readonly':'')+'>'+
+'<label>Código da prova</label><input name="code" value="'+esc(code)+'" '+(p&&!allowId?'readonly':'')+'>'+
 '<input name="name" value="'+esc(p?.name||'')+'" placeholder="Nome da prova" required>'+
 '<textarea name="description" placeholder="Descrição">'+esc(p?.description||'')+'</textarea>'+
 '<label>⏱️ Tempo limite (segundos)</label><input name="time" type="number" min="1" max="2592000" value="'+(p?.time_limit_seconds||1800)+'" placeholder="Ex.: 1800 = 30 minutos" required>'+
