@@ -36,7 +36,7 @@ async function loadMe(){const {data:{user}}=await sb.auth.getUser();me=user||nul
 function can(p){return profile?.account_status==='active'&&(supreme || perms.has(p))}
 function hasAdminAccess(){return profile?.account_type==='admin'||profile?.account_type==='instructor'}
 async function getSettings(){const {data}=await sb.from('rz7_system_settings').select('*');return Object.fromEntries((data||[]).map(x=>[x.key,x.value]))}
-async function home(){const s=await getSettings();const logo=s.logo_url?.replace(/^"|"$/g,'')||'';app.innerHTML='<section class="hero">'+logoHtml(logo)+'<div class="diamond">──── ◈ ────</div><h1 class="title">PROVA DE CONHECIMENTO</h1><div class="sub">LA HERMANDAD RZ7</div><div class="tag">Sistema oficial de avaliação da Hermandad</div><button class="primary" id="candidateBtn">👤 CANDIDATO · COMEÇAR</button><div class="footer">── LA HERMANDAD RZ7 ──<br>© RZ7</div></section>';document.getElementById('candidateBtn').onclick=()=>candidate()}
+async function home(){app.innerHTML='<section class="hero"><div id="homeLogo">'+logoHtml('')+'</div><div class="diamond">──── ◈ ────</div><h1 class="title">PROVA DE CONHECIMENTO</h1><div class="sub">LA HERMANDAD RZ7</div><div class="tag">Sistema oficial de avaliação da Hermandad</div><button class="primary" id="candidateBtn">👤 CANDIDATO · COMEÇAR</button><div class="footer">── LA HERMANDAD RZ7 ──<br>© RZ7</div></section>';const btn=document.getElementById('candidateBtn');if(btn)btn.onclick=()=>candidate();try{const s=await getSettings();const logo=s.logo_url?.replace(/^"|"$/g,'')||'';const holder=document.getElementById('homeLogo');if(holder&&logo)holder.innerHTML=logoHtml(logo)}catch(e){console.error(e)}}
 async function info(){
 const {data}=await sb.from('rz7_information_sections').select('*').eq('enabled',true).order('position');
 const sections=(data||[]);
@@ -154,6 +154,6 @@ async function takeProof(pid,aid){const {data:q}=await sb.from('rz7_proof_questi
 window.go=async x=>{if(x==='home')return home();if(x==='info')return info();if(x==='admin')return admin();if(x==='candidate')return candidate()};
 function bindAuth(client,kind){client.auth.onAuthStateChange((e)=>{if(e==='PASSWORD_RECOVERY'){const type=new URLSearchParams(location.search).get('type')||kind;if(type===kind)resetPage(kind)}})}
 bindAuth(sbCandidate,'candidate');bindAuth(sbAdmin,'admin');
-(async()=>{const qs=new URLSearchParams(location.search);const reset=qs.get('reset')==='1';if(reset)return resetPage(qs.get('type')==='admin'?'admin':'candidate');home();})();
+document.getElementById('candidateBtn').onclick=()=>candidate();(async()=>{const qs=new URLSearchParams(location.search);const reset=qs.get('reset')==='1';if(reset)return resetPage(qs.get('type')==='admin'?'admin':'candidate');try{await home()}catch(e){console.error(e);toast('Não foi possível carregar a página. Recarregue e tente novamente.')}})();
 </script>
 </body></html>
