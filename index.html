@@ -86,7 +86,7 @@ if(id){
 const latest=(await sb.from('rz7_proofs').select('number').order('number',{ascending:false}).limit(1)).data?.[0]?.number||0;
 const next=p?.number||latest+1,code=p?.code||('RZ7-'+String(next).padStart(3,'0'));
 const allowId=!!(p&&supreme);
-const initialQuestions=questions.length?questions.map(q=>({question:q.question,points:q.points||1,options:(q.rz7_proof_options||[]).map(o=>({label:o.label,is_correct:!!o.is_correct}))})):[{question:'',points:1,options:[{label:'A',is_correct:true},{label:'B',is_correct:false}]}];
+let initialQuestions=questions.length?questions.map(q=>({question:q.question,points:q.points||1,options:(q.rz7_proof_options||[]).map(o=>({label:o.label,is_correct:!!o.is_correct}))})):[{question:'',points:1,options:[{label:'A',is_correct:true},{label:'B',is_correct:false}]}];
 
 document.getElementById('adminContent').innerHTML='<div class="card"><h2>📝 '+(p?'EDITAR PROVA':'CRIAR PROVA')+'</h2><form id="pf" class="form">'+
 '<label>Número da prova</label><input name="number" type="number" value="'+next+'" readonly>'+
