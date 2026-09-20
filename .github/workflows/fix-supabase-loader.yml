@@ -1,4 +1,4 @@
-name: Fix Supabase loader
+name: Atualizar sistema RZ7
 
 on:
   push:
@@ -15,47 +15,145 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Inline Supabase client
+      - name: Atualizar index.html sem alterar a estrutura
         shell: bash
         run: |
           set -e
           python3 - <<'PY'
-          import re, urllib.request
+          import base64, re, urllib.request
           from pathlib import Path
 
           p = Path("index.html")
           s = p.read_text(encoding="utf-8")
 
-          url = "https://unpkg.com/@supabase/supabase-js@2.117.0/dist/umd/supabase.min.js"
-          lib = urllib.request.urlopen(url, timeout=30).read().decode("utf-8")
+          # 1) Decodifica o JavaScript embutido.
+          m = re.search(r'atob\("([A-Za-z0-9+/=]+)"\)', s)
+          if not m:
+              raise SystemExit("JavaScript embutido do RZ7 não encontrado.")
+          js = base64.b64decode(m.group(1)).decode("utf-8")
 
-          pattern = re.compile(r'<script[^>]+src=["\']https://(?:cdn\.jsdelivr\.net|unpkg\.com)/[^"\']*supabase-js@2(?:\.[^"\']*)?["\'][^>]*></script>', re.I)
-          if not pattern.search(s):
-              pattern = re.compile(r'<script[^>]+src=["\'][^"\']*supabase-js@2\.117\.0[^"\']*["\'][^>]*></script>', re.I)
+          # 2) Atualiza a configuração da prova para a permissão exclusiva do sistema.
+          js = js.replace(
+              "const canOwnConfig=await rz7Permission('provas.configurar_proprias');",
+              "const canOwnConfig=await rz7Permission('provas.configurar_sistema');"
+          )
+          js = js.replace(
+              "const canOther=await rz7Permission('provas.configurar_outras');",
+              "const canOther=await rz7Permission('provas.configurar_sistema');"
+          )
+          js = js.replace(
+              "const canOwnQuestions=await rz7Permission('provas.editar_questoes_proprias');\n const canOtherQuestions=await rz7Permission('provas.editar_questoes_outras');",
+              "const canOwnQuestions=await rz7Permission('provas.configurar_sistema');\n const canOtherQuestions=await rz7Permission('provas.configurar_sistema');"
+          )
+          js = js.replace(
+              "const canEdit=perms.includes('provas.editar_questoes_outras')||proof.criado_por===profile?.instrutor?.id&&perms.includes('provas.editar_questoes_proprias');",
+              "const canEdit=perms.includes('provas.configurar_sistema');"
+          )
 
-          replacement = "<script>\n/* Supabase JS inlined by RZ7 deploy fix */\n" + lib + "\n</script>"
-          s2, n = pattern.subn(replacement, s, count=1)
+          # 3) Corrige a exibição do cargo para usar o cargo RBAC real.
+          js = js.replace(
+              "Cargo ${escapeHtml(auth.profile.nivel||'instrutor')}",
+              "Cargo ${escapeHtml(auth.profile?.cargo?.nome||auth.profile?.nivel||'instrutor')}"
+          )
+          js = js.replace(
+              "Cargo atual: <strong>${escapeHtml(auth.profile.nivel||'instrutor')}</strong>",
+              "Cargo atual: <strong>${escapeHtml(auth.profile?.cargo?.nome||auth.profile?.nivel||'instrutor')}</strong>"
+          )
 
-          if n != 1:
-              raise SystemExit("Não encontrei a tag do Supabase no index.html.")
+          # 4) Adiciona leitura/aplicação da identidade visual.
+          if "async function loadRz7Identity()" not in js:
+              marker = "async function renderAdminPanel(){"
+              helper = r'''async function loadRz7Identity(){
+           try{
+            const {data,error}=await ensureSupabase().rpc('obter_configuracao_rz7',{p_chave:'identidade'});
+            if(error) throw error;
+            const v=data||{};
+            const url=typeof v.logo_url==='string'?v.logo_url:'';
+            const alt=typeof v.logo_alt==='string'&&v.logo_alt?v.logo_alt:'La Hermandad RZ7';
+            document.querySelectorAll('.brand-logo,.hero-logo').forEach(img=>{if(url){img.src=url;img.alt=alt;img.style.display='';}});
+            document.querySelectorAll('.brand-logo-fallback,.hero-logo-fallback').forEach(el=>{if(url)el.style.display='none';});
+            return v;
+           }catch(e){return {};}
+          }
+          '''
+              if marker not in js:
+                  raise SystemExit("Ponto do painel administrativo não encontrado.")
+              js = js.replace(marker, helper + marker, 1)
 
-          if s2 == s:
-              raise SystemExit("Nenhuma alteração feita.")
+          # 5) Adiciona a aba exclusiva de identidade.
+          if "data-admin-tab=\"identity\"" not in js:
+              old = '<button class="admin-tab" data-admin-tab="roles" type="button">⚙️ Cargos & permissões</button>'
+              new = old + '<button class="admin-tab" data-admin-tab="identity" type="button">🎨 Identidade</button>'
+              if old not in js:
+                  raise SystemExit("Menu de abas administrativas não encontrado.")
+              js = js.replace(old, new, 1)
 
-          p.write_text(s2, encoding="utf-8")
-          print("Supabase client inline aplicado.")
+          # 6) Adiciona o painel para alterar a logo.
+          if "const renderIdentity=async()=>{" not in js:
+              marker = "  function activateTab(id){"
+              panel = r'''  const renderIdentity=async()=>{
+           const current=await loadRz7Identity();
+           setPanel('identity',`<div class="card"><div class="card-title">🎨 IDENTIDADE DO SISTEMA RZ7</div><div class="card-text">Área exclusiva para alterar a logo exibida no sistema. O acesso é protegido pela permissão <strong>site.logo_alterar</strong>.</div><div class="form-grid" style="margin-top:14px"><label class="form-field"><span>URL da logo</span><input id="rz7LogoUrl" class="form-input" value="${escapeHtml(current.logo_url||'')}" placeholder="https://.../logo.png"></label><label class="form-field"><span>Texto alternativo</span><input id="rz7LogoAlt" class="form-input" value="${escapeHtml(current.logo_alt||'La Hermandad RZ7')}"></label></div><div class="button-group" style="margin-top:14px"><button class="button" id="saveRz7Logo" type="button">💾 SALVAR LOGO</button><button class="button secondary" id="resetRz7Logo" type="button">↩ RESTAURAR LOGO PADRÃO</button></div><div id="rz7LogoMsg" class="card-text" style="margin-top:10px"></div></div>`);
+           const save=$('saveRz7Logo'),reset=$('resetRz7Logo'),msg=$('rz7LogoMsg');
+           save.addEventListener('click',async()=>{try{save.disabled=true;const url=$('rz7LogoUrl').value.trim();const alt=$('rz7LogoAlt').value.trim()||'La Hermandad RZ7';const {error}=await ensureSupabase().rpc('salvar_configuracao_rz7',{p_chave:'identidade',p_valor:{logo_url:url,logo_alt:alt}});if(error)throw error;await loadRz7Identity();msg.textContent='Logo atualizada com sucesso.';}catch(e){msg.textContent='Não foi possível salvar: '+(e.message||e);}finally{save.disabled=false;}});
+           reset.addEventListener('click',async()=>{try{reset.disabled=true;const {error}=await ensureSupabase().rpc('salvar_configuracao_rz7',{p_chave:'identidade',p_valor:{logo_url:'',logo_alt:'La Hermandad RZ7'}});if(error)throw error;$('rz7LogoUrl').value='';$('rz7LogoAlt').value='La Hermandad RZ7';await loadRz7Identity();msg.textContent='Logo padrão restaurada.';}catch(e){msg.textContent='Não foi possível restaurar: '+(e.message||e);}finally{reset.disabled=false;}});
+          };
+          '''
+              if marker not in js:
+                  raise SystemExit("Ponto das abas administrativas não encontrado.")
+              js = js.replace(marker, panel + marker, 1)
 
+          # 7) Liga a nova aba ao roteador administrativo.
+          js = js.replace(
+              "else if(id==='roles')renderRoles();",
+              "else if(id==='roles')renderRoles();else if(id==='identity')renderIdentity();"
+          )
+
+          # 8) Carrega a identidade no início.
+          if "await loadRz7Identity();" not in js:
+              js = js.replace("setConfig(c);\n await syncOpenProofFromDb();", "setConfig(c);\n await loadRz7Identity();\n await syncOpenProofFromDb();", 1)
+          else:
+              # Se o helper já existe, garante que o init o chama.
+              if "setConfig(c);\n await loadRz7Identity();\n await syncOpenProofFromDb();" not in js:
+                  js = js.replace("setConfig(c);\n await syncOpenProofFromDb();", "setConfig(c);\n await loadRz7Identity();\n await syncOpenProofFromDb();", 1)
+
+          # 9) Re-embute o JS mantendo a estrutura original.
+          enc = base64.b64encode(js.encode("utf-8")).decode("ascii")
+          s = s[:m.start(1)] + enc + s[m.end(1):]
+
+          # 10) Se ainda houver CDN externo, usa versão fixada com fallback.
+          old_tags = re.compile(r'<script[^>]+src=["\']https://(?:cdn\.jsdelivr\.net|unpkg\.com)/[^"\']*supabase-js@2(?:\.[^"\']*)?["\'][^>]*></script>', re.I)
+          if old_tags.search(s):
+              url = "https://unpkg.com/@supabase/supabase-js@2.117.0/dist/umd/supabase.min.js"
+              lib = urllib.request.urlopen(url, timeout=30).read().decode("utf-8")
+              s = old_tags.sub("<script>\n/* Supabase JS inline RZ7 */\n" + lib + "\n</script>", s, count=1)
+
+          p.write_text(s, encoding="utf-8")
+          print("Sistema RZ7 atualizado preservando a estrutura existente.")
           PY
 
-      - name: Commit patched index
+      - name: Verificar JavaScript
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import base64,re
+          from pathlib import Path
+          s=Path("index.html").read_text(encoding="utf-8")
+          m=re.search(r'atob\("([A-Za-z0-9+/=]+)"\)',s)
+          if not m: raise SystemExit("JS embutido não encontrado")
+          Path("/tmp/rz7.js").write_bytes(base64.b64decode(m.group(1)))
+          PY
+          node --check /tmp/rz7.js
+
+      - name: Commit
         shell: bash
         run: |
           git config user.name "RZ7 Deploy Bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add index.html
           if git diff --cached --quiet; then
-            echo "Sem alterações para commit."
+            echo "Nenhuma alteração nova."
           else
-            git commit -m "fix: inline Supabase client for instructor login"
+            git commit -m "feat: atualizar sistema RZ7 completo"
             git push
           fi
