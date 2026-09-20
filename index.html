@@ -72,17 +72,27 @@ async function resetPage(kind='candidate'){useAuth(kind);app.innerHTML='<div cla
 async function admin(){useAuth('admin');await loadMe();if(me&&profile&&hasAdminAccess())return adminPanel();app.innerHTML='<div class="back"><button class="ghost" onclick="go(\'home\')">← VOLTAR</button></div>'+authCard('👑 ADMINISTRAÇÃO');document.getElementById('authForm').onsubmit=async e=>{e.preventDefault();const f=new FormData(e.currentTarget);const {error}=await sb.auth.signInWithPassword({email:f.get('email'),password:f.get('password')});if(error)return toast(error.message);await loadMe();if(!hasAdminAccess())return toast('Esta conta não possui acesso à Administração.');adminPanel()};document.getElementById('forgot').onclick=()=>forgot('admin');const rb=document.getElementById('register');if(me&&profile?.account_type==='instructor')rb.classList.add('hidden');rb.onclick=()=>instructorRegister()}
 function adminPanel(){const nav=[['dashboard','📊 PAINEL',true],['proofs','📝 PROVAS',can('manage_proofs')||can('manage_own_proofs')],['templates','💾 MODELOS',can('manage_templates')],['requests','🛡️ SOLICITAÇÕES',can('manage_instructor_requests')],['punishments','⚠️ PUNIÇÕES',can('apply_punishment')],['permissions','⚙️ CARGOS/PERMISSÕES',can('manage_roles_permissions')],['identity','🖼️ IDENTIDADE',can('manage_identity')],['logs','📜 LOGS',can('view_audit_logs')]];app.innerHTML='<div class="sectionTitle"><h1>👑 '+esc(profile?.account_type==='admin'?'ADMINISTRAÇÃO':'ÁREA DO INSTRUTOR')+'</h1><button class="ghost" id="logout">SAIR</button></div><div class="adminbar">'+nav.filter(x=>x[2]).map(x=>'<button class="ghost gold" data-admin="'+x[0]+'">'+x[1]+'</button>').join('')+'</div><div id="adminContent"></div>';document.getElementById('logout').onclick=async()=>{await sb.auth.signOut();go('home')};document.querySelectorAll('[data-admin]').forEach(b=>b.onclick=()=>adminSection(b.dataset.admin));adminSection('dashboard')}
 async function adminSection(x){const c=document.getElementById('adminContent');if(x==='dashboard'){const [{count:proofs},{count:req},{count:attempts}]=await Promise.all([sb.from('rz7_proofs').select('*',{count:'exact',head:true}),sb.from('rz7_instructor_applications').select('*',{count:'exact',head:true}).eq('status','pending'),sb.from('rz7_proof_attempts').select('*',{count:'exact',head:true}).eq('status','in_progress')]);c.innerHTML='<div class="grid"><div class="card"><h3>📝 PROVAS</h3><b>'+proofs+'</b></div><div class="card"><h3>🛡️ SOLICITAÇÕES</h3><b>'+req+'</b></div><div class="card"><h3>👁️ EM ANDAMENTO</h3><b>'+attempts+'</b></div></div><div class="card" style="margin-top:14px"><h3>🔐 Nível de acesso</h3><p class="muted">A interface é filtrada por permissão e o banco aplica RLS. A conta máxima é exclusiva do Administrador Supremo.</p></div>';return}if(x==='proofs')return proofsAdmin(c);if(x==='templates')return templatesAdmin(c);if(x==='requests')return requestsAdmin(c);if(x==='punishments')return punishAdmin(c);if(x==='permissions')return permissionsAdmin(c);if(x==='identity')return identityAdmin(c);if(x==='logs')return logsAdmin(c)}
-async function proofsAdmin(c){
+async function proofsAdmin(c,showArchived=false){
   const ownOnly=profile?.account_type==='instructor'&&!can('manage_proofs');
   let query=sb.from('rz7_proofs').select('*').order('created_at',{ascending:false});
   if(ownOnly)query=query.eq('created_by',me.id);
+  query=showArchived?query.eq('status','archived'):query.neq('status','archived');
   const {data,error}=await query;
   if(error)return toast(error.message);
   const canResults=can('view_all_results')||can('view_own_results')||supreme;
-  c.innerHTML='<div class="sectionTitle"><h2>📝 PROVAS</h2><button class="primary" id="newProof">CRIAR NOVA PROVA</button></div>'+
-    '<p class="small muted">'+(ownOnly?'Você está vendo somente as provas criadas por você.':'Você está vendo as provas disponíveis para sua permissão.')+'</p>'+
-    '<div class="list">'+(data||[]).map(p=>'<div class="row"><div><b>'+esc(p.code)+' · '+esc(p.name)+'</b><div class="small muted">'+esc(p.status)+' · '+esc(p.visibility)+' · '+Math.round(p.time_limit_seconds/60)+' min</div></div><div class="actions"><button class="ghost" data-open="'+p.id+'">'+(p.status==='open'?'FECHAR':'ABRIR')+'</button><button class="ghost" data-edit="'+p.id+'">EDITAR</button>'+(canResults?'<button class="ghost" data-results="'+p.id+'">RESULTADOS</button>':'')+'</div></div>').join('')+'</div>';
-  document.getElementById('newProof').onclick=()=>proofForm();
+  const canArchive=can('archive_proofs')||supreme;
+  c.innerHTML='<div class="sectionTitle"><h2>📝 PROVAS '+(showArchived?'· ARQUIVADAS':'')+'</h2><div class="actions">'+
+    '<button class="ghost" id="archiveList">'+(showArchived?'← PROVAS ATIVAS':'🗄️ VER ARQUIVADAS')+'</button>'+
+    (showArchived?'':'<button class="primary" id="newProof">CRIAR NOVA PROVA</button>')+'</div></div>'+
+    '<p class="small muted">'+(showArchived?'Provas arquivadas ficam fora da área principal, mas continuam armazenadas para preservar histórico e resultados.':'Provas arquivadas não aparecem nesta lista e não podem receber novos candidatos.')+'</p>'+
+    '<div class="list">'+((data||[]).length?(data||[]).map(p=>'<div class="row"><div><b>'+esc(p.code)+' · '+esc(p.name)+'</b><div class="small muted">'+esc(p.status)+' · '+esc(p.visibility)+' · '+Math.round(p.time_limit_seconds/60)+' min</div></div><div class="actions">'+
+      (!showArchived?'<button class="ghost" data-open="'+p.id+'">'+(p.status==='open'?'FECHAR':'ABRIR')+'</button><button class="ghost" data-edit="'+p.id+'">EDITAR</button>':'')+
+      (canResults?'<button class="ghost" data-results="'+p.id+'">RESULTADOS</button>':'')+
+      (canArchive?(showArchived?'<button class="ghost" data-restore="'+p.id+'">RESTAURAR</button>':'<button class="ghost danger" data-archive="'+p.id+'">ARQUIVAR</button>'):'')+
+      '</div></div>').join(''):'<div class="card"><p>'+(showArchived?'Nenhuma prova arquivada.':'Nenhuma prova ativa no momento.')+'</p></div>')+'</div>';
+  const list=document.getElementById('archiveList');
+  if(list)list.onclick=()=>proofsAdmin(c,!showArchived);
+  const np=document.getElementById('newProof');if(np)np.onclick=()=>proofForm();
   c.querySelectorAll('[data-open]').forEach(b=>b.onclick=async()=>{
     const id=b.dataset.open;
     const {data:p,error:e}=await sb.from('rz7_proofs').select('status').eq('id',id).single();
@@ -92,10 +102,23 @@ async function proofsAdmin(c){
     if(st==='open')upd.opened_at=new Date().toISOString();else upd.closed_at=new Date().toISOString();
     const {error}=await sb.from('rz7_proofs').update(upd).eq('id',id);
     if(error)return toast(error.message);
-    proofsAdmin(c)
+    proofsAdmin(c,showArchived)
   });
   c.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>proofForm(b.dataset.edit));
   c.querySelectorAll('[data-results]').forEach(b=>b.onclick=()=>proofResults(c,b.dataset.results));
+  c.querySelectorAll('[data-archive]').forEach(b=>b.onclick=async()=>{
+    if(!confirm('Arquivar esta prova? Ela sairá da lista ativa, mas todo o histórico e resultados serão preservados.'))return;
+    const {error}=await sb.rpc('rz7_archive_proof',{p_proof:b.dataset.archive,p_restore:false});
+    if(error)return toast(error.message);
+    toast('Prova arquivada.');
+    proofsAdmin(c,false)
+  });
+  c.querySelectorAll('[data-restore]').forEach(b=>b.onclick=async()=>{
+    const {error}=await sb.rpc('rz7_archive_proof',{p_proof:b.dataset.restore,p_restore:true});
+    if(error)return toast(error.message);
+    toast('Prova restaurada.');
+    proofsAdmin(c,true)
+  });
 }
 async function proofResults(c,pid){
   const {data:p,error:pe}=await sb.from('rz7_proofs').select('id,code,name,status,visibility').eq('id',pid).single();
