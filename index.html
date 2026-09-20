@@ -101,7 +101,8 @@ async function instructorRegister(){
       await loadMe();
       if(!profile)return toast('Perfil do instrutor não encontrado.');
       localStorage.setItem('rz7_instructor_registered','1');
-      toast('Solicitação enviada. Aguarde a análise da liderança. Você só poderá entrar como instrutor após a aprovação do Supremo.');
+      await sb.auth.signOut();
+      toast('Solicitação enviada ao Supremo. Você só poderá entrar como instrutor após a aprovação e atribuição do cargo.');
       admin();
     }
   };
