@@ -66,7 +66,7 @@ js = js.replace(register_old, register_new, 1)
 if "async function loadRz7Identity()" not in js:
     helper = """async function loadRz7Identity(){
  try{
-  const {data,error}=await ensureSupabase().rpc('obter_configuracao_rz7',{p_chave:'identidade'});
+  const sb=ensureSupabase()||((await waitForRz7Supabase())&&ensureSupabase());\n  if(!sb) return {};\n  const {data,error}=await sb.rpc('obter_configuracao_rz7',{p_chave:'identidade'});
   if(error) throw error;
   const v=data||{},url=typeof v.logo_url==='string'?v.logo_url:'',alt=typeof v.logo_alt==='string'&&v.logo_alt?v.logo_alt:'La Hermandad RZ7';
   document.querySelectorAll('.brand-logo,.hero-logo').forEach(img=>{if(url){img.src=url;img.alt=alt;img.style.display='';}});
