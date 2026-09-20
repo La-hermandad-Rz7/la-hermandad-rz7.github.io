@@ -20,9 +20,8 @@ pairs = [
 for old, new in pairs:
     js = js.replace(old, new)
 
-# Supabase loader that tolerates slow CDN loading.
 if "function waitForRz7Supabase(" not in js:
-    loader = r'''let rz7SupabaseWait=null;
+    loader = """let rz7SupabaseWait=null;
 function waitForRz7Supabase(timeout=12000){
  if(window.supabase && typeof window.supabase.createClient==="function") return Promise.resolve(window.supabase);
  if(rz7SupabaseWait) return rz7SupabaseWait;
@@ -37,38 +36,35 @@ function waitForRz7Supabase(timeout=12000){
  });
  return rz7SupabaseWait;
 }
-'''
-    marker = "function ensureSupabase(){"
-    js = js.replace(marker, loader + marker, 1)
+"""
+    js = js.replace("function ensureSupabase(){", loader + "function ensureSupabase(){", 1)
 
-# Wait for the library on the login/recovery/register actions.
-js = js.replace("const sb=ensureSupabase();
+login_old = """const sb=ensureSupabase();
   if(!sb){msg.textContent="O serviço de autenticação ainda não carregou. Aguarde e tente novamente.";btn.disabled=false;return;}
-  const {error}=await sb.auth.signInWithPassword",
-                "const sb=ensureSupabase()||((await waitForRz7Supabase())&&ensureSupabase());
+  const {error}=await sb.auth.signInWithPassword"""
+login_new = """const sb=ensureSupabase()||((await waitForRz7Supabase())&&ensureSupabase());
   if(!sb){msg.textContent="O serviço de autenticação não respondeu. Aguarde alguns segundos e tente novamente.";btn.disabled=false;return;}
-  const {error}=await sb.auth.signInWithPassword")
-js = js.replace("const sb=ensureSupabase();
+  const {error}=await sb.auth.signInWithPassword"""
+js = js.replace(login_old, login_new, 1)
+
+reset_old = """const sb=ensureSupabase();
   if(!sb){msg.textContent="O serviço de autenticação ainda não carregou. Aguarde e tente novamente.";btn.disabled=false;return;}
-  const {error}=await sb.auth.resetPasswordForEmail",
-                "const sb=ensureSupabase()||((await waitForRz7Supabase())&&ensureSupabase());
+  const {error}=await sb.auth.resetPasswordForEmail"""
+reset_new = """const sb=ensureSupabase()||((await waitForRz7Supabase())&&ensureSupabase());
   if(!sb){msg.textContent="O serviço de autenticação não respondeu. Aguarde alguns segundos e tente novamente.";btn.disabled=false;return;}
-  const {error}=await sb.auth.resetPasswordForEmail")
-js = js.replace("const sb=ensureSupabase();
+  const {error}=await sb.auth.resetPasswordForEmail"""
+js = js.replace(reset_old, reset_new, 1)
+
+register_old = """const sb=ensureSupabase();
   if(!sb){msg.textContent="O serviço de autenticação ainda não carregou. Aguarde e tente novamente.";$('registerSubmit').disabled=false;return;}
-  const {data,error}=await sb.auth.signUp",
-                "const sb=ensureSupabase()||((await waitForRz7Supabase())&&ensureSupabase());
+  const {data,error}=await sb.auth.signUp"""
+register_new = """const sb=ensureSupabase()||((await waitForRz7Supabase())&&ensureSupabase());
   if(!sb){msg.textContent="O serviço de autenticação não respondeu. Aguarde alguns segundos e tente novamente.";$('registerSubmit').disabled=false;return;}
-  const {data,error}=await sb.auth.signUp")
+  const {data,error}=await sb.auth.signUp"""
+js = js.replace(register_old, register_new, 1)
 
-# Existing CDN tag: pin jsDelivr and provide an unpkg fallback without requiring build-time downloads.
-pat = re.compile(r'<script[^>]+src=["\']https://(?:cdn\.jsdelivr\.net|unpkg\.com)/[^"\']*supabase-js@2[^"\']*["\'][^>]*></script>', re.I)
-replacement = '<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.0/dist/umd/supabase.min.js" onerror="this.onerror=null;this.src=\'https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.min.js\';"></script>'
-s = pat.sub(replacement, s, count=1)
-
-# Identity + admin permission additions.
 if "async function loadRz7Identity()" not in js:
-    helper = '''async function loadRz7Identity(){
+    helper = """async function loadRz7Identity(){
  try{
   const {data,error}=await ensureSupabase().rpc('obter_configuracao_rz7',{p_chave:'identidade'});
   if(error) throw error;
@@ -78,21 +74,21 @@ if "async function loadRz7Identity()" not in js:
   return v;
  }catch(e){return {};}
 }
-'''
+"""
     js = js.replace("async function renderAdminPanel(){", helper+"async function renderAdminPanel(){", 1)
 
 if "['identity','🎨 Identidade']" not in js:
     js = js.replace("['roles','⚙️ Cargos & permissões']","['roles','⚙️ Cargos & permissões'],['identity','🎨 Identidade']",1)
 
 if "const renderIdentity=async()=>{" not in js:
-    panel = '''  const renderIdentity=async()=>{
+    panel = """  const renderIdentity=async()=>{
    const current=await loadRz7Identity();
    setPanel('identity',`<div class="card"><div class="card-title">🎨 IDENTIDADE DO SISTEMA RZ7</div><div class="card-text">Área exclusiva para alterar a logo exibida no sistema.</div><div class="form-grid" style="margin-top:14px"><label class="form-field"><span>URL da logo</span><input id="rz7LogoUrl" class="form-input" value="${escapeHtml(current.logo_url||'')}" placeholder="https://.../logo.png"></label><label class="form-field"><span>Texto alternativo</span><input id="rz7LogoAlt" class="form-input" value="${escapeHtml(current.logo_alt||'La Hermandad RZ7')}"></label></div><div class="button-group" style="margin-top:14px"><button class="button" id="saveRz7Logo" type="button">💾 SALVAR LOGO</button><button class="button secondary" id="resetRz7Logo" type="button">↩ RESTAURAR LOGO PADRÃO</button></div><div id="rz7LogoMsg" class="card-text" style="margin-top:10px"></div></div>`);
    const save=$('saveRz7Logo'),reset=$('resetRz7Logo'),msg=$('rz7LogoMsg');
    save.addEventListener('click',async()=>{try{save.disabled=true;const url=$('rz7LogoUrl').value.trim(),alt=$('rz7LogoAlt').value.trim()||'La Hermandad RZ7';const {error}=await ensureSupabase().rpc('salvar_configuracao_rz7',{p_chave:'identidade',p_valor:{logo_url:url,logo_alt:alt}});if(error)throw error;await loadRz7Identity();msg.textContent='Logo atualizada com sucesso.';}catch(e){msg.textContent='Não foi possível salvar: '+(e.message||e);}finally{save.disabled=false;}});
    reset.addEventListener('click',async()=>{try{reset.disabled=true;const {error}=await ensureSupabase().rpc('salvar_configuracao_rz7',{p_chave:'identidade',p_valor:{logo_url:'',logo_alt:'La Hermandad RZ7'}});if(error)throw error;$('rz7LogoUrl').value='';$('rz7LogoAlt').value='La Hermandad RZ7';await loadRz7Identity();msg.textContent='Logo padrão restaurada.';}catch(e){msg.textContent='Não foi possível restaurar: '+(e.message||e);}finally{reset.disabled=false;}});
   };
-'''
+"""
     js = js.replace("  function activateTab(id){", panel+"  function activateTab(id){", 1)
 
 js = js.replace("else if(id==='roles')renderRoles();","else if(id==='roles')renderRoles();else if(id==='identity')renderIdentity();")
@@ -102,5 +98,10 @@ if "setConfig(c);\n await loadRz7Identity();\n await syncOpenProofFromDb();" not
 
 enc = base64.b64encode(js.encode("utf-8")).decode("ascii")
 s = s[:m.start(1)] + enc + s[m.end(1):]
+
+pat = re.compile(r'<script[^>]+src=["\']https://(?:cdn\.jsdelivr\.net|unpkg\.com)/[^"\']*supabase-js@2[^"\']*["\'][^>]*></script>', re.I)
+replacement = '<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.0/dist/umd/supabase.min.js" onerror="this.onerror=null;this.src=\'https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.min.js\';"></script>'
+s = pat.sub(replacement, s, count=1)
+
 p.write_text(s, encoding="utf-8")
 print("RZ7 index atualizado.")
