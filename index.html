@@ -313,8 +313,121 @@ async function proofAccessAdmin(c){
   c.querySelectorAll('[data-deny]').forEach(b=>b.onclick=async()=>{const reason=prompt('Motivo da negativa:','');if(reason===null)return;const {error}=await sb.rpc('rz7_review_proof_access_request',{p_request:b.dataset.deny,p_approve:false,p_reason:reason});if(error)return toast(error.message);toast('Solicitação negada.');proofAccessAdmin(c)});
 }
 
-async function requestsAdmin(c){const {data,error}=await sb.from('rz7_instructor_applications').select('*').order('created_at',{ascending:false});if(error)return toast(error.message);const ids=[...new Set((data||[]).map(a=>a.user_id))];const {data:users}=ids.length?await sb.from('rz7_profiles').select('user_id,account_type,account_status,name,roblox,discord,email').in('user_id',ids):{data:[]};const um=new Map((users||[]).map(u=>[u.user_id,u]));c.innerHTML='<div class="sectionTitle"><h2>🛡️ SOLICITAÇÕES DE INSTRUTOR</h2></div><p class="small muted">Cada nova solicitação é registrada separadamente. Negativas permanecem no histórico e não impedem uma nova solicitação, salvo se houver punição ativa de bloqueio.</p><div class="list">'+((data||[]).length?(data||[]).map(a=>{const u=um.get(a.user_id)||{},status=a.status==='pending'?'🟡 PENDENTE':a.status==='approved'?'🟢 APROVADA':'🔴 NEGADA';return '<div class="card"><div class="sectionTitle"><div><b>'+esc(a.name)+'</b><div class="muted">'+esc(a.roblox)+' · '+esc(a.discord)+' · '+esc(a.email)+'</div></div><span class="pill">'+status+'</span></div><div class="small muted">Solicitação: '+new Date(a.created_at).toLocaleString('pt-BR')+(a.reviewed_at?' · Revisada: '+new Date(a.reviewed_at).toLocaleString('pt-BR'):'')+'</div>'+(a.review_reason?'<div class="small muted" style="margin-top:8px">Motivo/observação: '+esc(a.review_reason)+'</div>':'')+'<div class="small muted" style="margin-top:8px">Conta atual: '+esc(u.account_type||'candidate')+' · '+esc(u.account_status||'active')+'</div><div class="actions" style="margin-top:10px">'+(a.status==='pending'?'<button class="primary" data-ap="'+a.id+'">ACEITAR</button><button class="ghost danger" data-den="'+a.id+'">NEGAR</button>':'')+(u.account_type==='candidate'&&(supreme||can('punish_instructors'))?'<button class="ghost danger" data-pun="'+a.user_id+'">⚠️ PUNIR CANDIDATO</button>':'')+'</div></div>'}).join(''):'<div class="card"><p>Nenhuma solicitação registrada.</p></div>')+'</div>';c.querySelectorAll('[data-ap]').forEach(b=>b.onclick=()=>reviewApp(b.dataset.ap,true));c.querySelectorAll('[data-den]').forEach(b=>b.onclick=()=>reviewApp(b.dataset.den,false));c.querySelectorAll('[data-pun]').forEach(b=>b.onclick=()=>punishForm(b.dataset.pun))}
-async function reviewApp(id,approve){const reason=prompt(approve?'Observação (opcional):':'Motivo da negativa:','');const {error}=await sb.rpc('rz7_review_instructor_application',{p_application:id,p_approve:approve,p_reason:reason});if(error)return toast(error.message);adminSection('requests')}
+async function requestsAdmin(c){
+  const {data,error}=await sb.from('rz7_instructor_applications').select('*').order('created_at',{ascending:false});
+  if(error)return toast(error.message);
+  const ids=[...new Set((data||[]).map(a=>a.user_id))];
+  const {data:users}=ids.length?await sb.from('rz7_profiles').select('user_id,account_type,account_status,name,roblox,discord,email').in('user_id',ids):{data:[]};
+  const um=new Map((users||[]).map(u=>[u.user_id,u]));
+  c.innerHTML='<div class="sectionTitle"><h2>🛡️ SOLICITAÇÕES DE INSTRUTOR</h2></div>'+
+    '<p class="small muted">Uma negativa pode ter dois resultados: <b>sem punição</b>, quando a solicitação e a conta são descartadas para permitir um novo registro completo; ou <b>com punição</b>, quando a conta e todo o histórico são preservados.</p>'+
+    '<div class="list">'+((data||[]).length?(data||[]).map(a=>{
+      const u=um.get(a.user_id)||{},status=a.status==='pending'?'🟡 PENDENTE':a.status==='approved'?'🟢 APROVADA':'🔴 NEGADA';
+      return '<div class="card"><div class="sectionTitle"><div><b>'+esc(a.name)+'</b><div class="muted">'+esc(a.roblox)+' · '+esc(a.discord)+' · '+esc(a.email)+'</div></div><span class="pill">'+status+'</span></div>'+
+        '<div class="small muted">Solicitação: '+new Date(a.created_at).toLocaleString('pt-BR')+(a.reviewed_at?' · Revisada: '+new Date(a.reviewed_at).toLocaleString('pt-BR'):'')+'</div>'+
+        (a.review_reason?'<div class="small muted" style="margin-top:8px">Motivo/observação: '+esc(a.review_reason)+'</div>':'')+
+        '<div class="small muted" style="margin-top:8px">Conta atual: '+esc(u.account_type||'candidate')+' · '+esc(u.account_status||'active')+'</div>'+
+        '<div class="actions" style="margin-top:10px">'+
+        (a.status==='pending'?'<button class="primary" data-ap="'+a.id+'">ACEITAR</button><button class="ghost danger" data-den="'+a.id+'">NEGAR</button>':'')+
+        (u.account_type==='candidate'&&(supreme||can('punish_instructors'))?'<button class="ghost danger" data-pun="'+a.user_id+'">⚠️ PUNIR CANDIDATO</button>':'')+
+        '</div></div>';
+    }).join(''):'<div class="card"><p>Nenhuma solicitação registrada.</p></div>')+'</div>';
+  c.querySelectorAll('[data-ap]').forEach(b=>b.onclick=()=>reviewApp(b.dataset.ap,true));
+  c.querySelectorAll('[data-den]').forEach(b=>b.onclick=()=>reviewApp(b.dataset.den,false));
+  c.querySelectorAll('[data-pun]').forEach(b=>b.onclick=()=>punishForm(b.dataset.pun));
+}
+async function reviewApp(id,approve){
+  if(approve){
+    const reason=prompt('Observação para a autorização (opcional):','');
+    if(reason===null)return;
+    const {error}=await sb.rpc('rz7_review_instructor_application',{
+      p_application:id,
+      p_approve:true,
+      p_reason:reason
+    });
+    if(error)return toast(error.message);
+    toast('Instrutor aprovado.');
+    return adminSection('requests');
+  }
+
+  const reason=prompt('Motivo da negativa (obrigatório):','');
+  if(reason===null)return;
+  if(!reason.trim())return toast('Informe o motivo da negativa.');
+
+  const choice=prompt(
+    'NEGATIVA — escolha o destino da conta:\n\n'+
+    '0 = SEM PUNIÇÃO → exclui a solicitação e a conta. A pessoa poderá fazer um NOVO REGISTRO e receber NOVO E-MAIL DE CONFIRMAÇÃO.\n\n'+
+    '1 = ADVERTÊNCIA\n'+
+    '2 = BLOQUEAR NOVAS SOLICITAÇÕES\n'+
+    '3 = BLOQUEAR PROVAS\n'+
+    '4 = SUSPENSÃO\n'+
+    '5 = BLOQUEIO PERMANENTE DE PROVAS\n'+
+    '6 = BLOQUEIO PERMANENTE TOTAL\n\n'+
+    'Digite 0, 1, 2, 3, 4, 5 ou 6:',
+    '0'
+  );
+  if(choice===null)return;
+  const map={
+    '1':'warning',
+    '2':'instructor_request_block',
+    '3':'proof_block',
+    '4':'suspension',
+    '5':'permanent_proof_block',
+    '6':'permanent_total_block'
+  };
+  if(!Object.prototype.hasOwnProperty.call(map,choice) && choice!=='0')
+    return toast('Opção inválida.');
+
+  if(choice==='0'){
+    const ok=confirm(
+      '⚠️ NEGAR SEM PUNIÇÃO\n\n'+
+      'A conta e a solicitação serão excluídas.\n'+
+      'O histórico dessa tentativa não ficará vinculado à conta.\n\n'+
+      'Depois disso, a pessoa poderá se registrar novamente como uma nova conta e receber um novo e-mail de confirmação.\n\n'+
+      'Continuar?'
+    );
+    if(!ok)return;
+    const {error}=await sb.rpc('rz7_review_instructor_application',{
+      p_application:id,
+      p_approve:false,
+      p_reason:reason,
+      p_punishment_type:null,
+      p_punishment_duration_seconds:null,
+      p_punishment_permanent:false
+    });
+    if(error)return toast(error.message);
+    toast('Negativa registrada. A conta foi descartada e poderá realizar um novo registro.');
+    return adminSection('requests');
+  }
+
+  let permanent=false;
+  let duration=86400;
+  if(choice==='5'||choice==='6'){
+    const p=confirm('Aplicar esta punição de forma PERMANENTE?\n\nOK = permanente\nCancelar = temporária');
+    permanent=p;
+  }
+  if(!permanent){
+    const d=prompt('Duração da punição em segundos (máximo 2.592.000 = 30 dias):',String(duration));
+    if(d===null)return;
+    duration=Number(d);
+    if(!Number.isInteger(duration)||duration<1||duration>2592000)
+      return toast('A duração deve estar entre 1 segundo e 2.592.000 segundos.');
+  }else{
+    duration=null;
+  }
+
+  const {error}=await sb.rpc('rz7_review_instructor_application',{
+    p_application:id,
+    p_approve:false,
+    p_reason:reason,
+    p_punishment_type:map[choice],
+    p_punishment_duration_seconds:duration,
+    p_punishment_permanent:permanent
+  });
+  if(error)return toast(error.message);
+  toast('Solicitação negada e punição registrada. A conta e o histórico foram preservados.');
+  adminSection('requests');
+}
 function punishForm(uid){document.getElementById('adminContent').innerHTML='<div class="card"><h2>⚠️ PUNIR CANDIDATO</h2><form id="pun" class="form"><input name="uid" value="'+esc(uid)+'" readonly><select name="type"><option value="warning">⚠️ Advertência</option><option value="instructor_request_block">🚫 Bloquear novas solicitações de instrutor</option><option value="proof_block">🔒 Bloquear provas</option><option value="suspension">⏱️ Suspensão</option><option value="permanent_proof_block">🔴 Bloqueio permanente de provas</option><option value="permanent_total_block">🔴 Bloqueio permanente total</option></select><textarea name="reason" placeholder="Motivo" required></textarea><input name="duration" type="number" min="1" max="2592000" value="86400" placeholder="Duração em segundos"><label class="row"><span><b>⏱️ Permanente</b><div class="small muted">Punições permanentes exigem o Administrador Supremo.</div></span><input type="checkbox" name="permanent"></label><p class="small muted">Para bloquear apenas novos pedidos, use “Bloquear novas solicitações de instrutor”. Temporárias: máximo 30 dias.</p><button class="primary">APLICAR PUNIÇÃO</button></form></div>';document.getElementById('pun').onsubmit=async e=>{e.preventDefault();const f=new FormData(e.currentTarget),type=f.get('type'),permanent=f.get('permanent')==='on',duration=permanent?null:Number(f.get('duration'));if(permanent&&!supreme)return toast('Somente o Administrador Supremo pode aplicar punições permanentes.');if(type==='permanent_total_block'){if(!supreme)return toast('Somente o Administrador Supremo pode aplicar bloqueio permanente total.');const {error}=await sb.functions.invoke('rz7-account-action',{body:{action:'permanent_total_block',user_id:f.get('uid')}});if(error)return toast(error.message)}const {error}=await sb.rpc('rz7_apply_instructor_punishment',{p_user:f.get('uid'),p_type:type,p_reason:f.get('reason'),p_duration_seconds:duration,p_permanent:permanent});if(error)return toast(error.message);toast('Punição aplicada.');adminSection('requests')}}
 async function punishAdmin(c){
   if(!can('apply_punishment')&&!can('punish_instructors'))return toast('Você não possui permissão para esta área.');
