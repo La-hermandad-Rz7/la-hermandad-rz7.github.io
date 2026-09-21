@@ -352,7 +352,40 @@ if(p){
 }
 toast('Prova salva.');adminSection('proofs')
 }
-}async function templatesAdmin(c){const {data}=await sb.from('rz7_proof_templates').select('*').order('created_at',{ascending:false});c.innerHTML='<div class="sectionTitle"><h2>💾 MODELOS</h2><button class="primary" id="nt">NOVO MODELO</button></div><div class="list">'+(data||[]).map(t=>'<div class="row"><div><b>'+esc(t.name)+'</b><div class="small muted">'+esc(t.description||'')+'</div></div><button class="ghost" data-use="'+t.id+'">USAR MODELO</button></div>').join('')+'</div>';document.getElementById('nt').onclick=()=>templateForm();c.querySelectorAll('[data-use]').forEach(b=>b.onclick=async()=>{const {data:t}=await sb.from('rz7_proof_templates').select('*').eq('id',b.dataset.use).single();const n=(await sb.from('rz7_proofs').select('number').order('number',{ascending:false}).limit(1)).data?.[0]?.number+1||1;const {data:p,error}=await sb.from('rz7_proofs').insert({number:n,code:'RZ7-'+String(n).padStart(3,'0'),name:t.name,description:t.description,time_limit_seconds:t.time_limit_seconds,participant_limit:t.participant_limit,visibility:t.visibility,created_by:me.id,template_id:t.id}).select().single();if(error)return toast(error.message);const {error:qerr}=await sb.rpc('rz7_replace_proof_questions',{p_proof:p.id,p_questions:t.questions||[]});if(qerr)return toast(qerr.message);toast('Modelo carregado. Revise e configure sua nova prova antes de abrir.');proofForm(p.id)})}
+}async function templatesAdmin(c){
+  const canDeleteTemplates=can('manage_templates')||supreme;
+  const {data,error}=await sb.from('rz7_proof_templates').select('*').order('created_at',{ascending:false});
+  if(error)return toast(error.message);
+  c.innerHTML='<div class="sectionTitle"><h2>💾 MODELOS</h2><button class="primary" id="nt">NOVO MODELO</button></div>'+
+    '<p class="small muted">Modelos são internos da Administração e servem como base para criar novas provas.</p>'+
+    '<div class="list">'+(data||[]).map(t=>'<div class="row"><div><b>'+esc(t.name)+'</b><div class="small muted">'+esc(t.description||'')+'</div></div><div class="actions">'+
+      '<button class="ghost" data-use="'+t.id+'">USAR MODELO</button>'+
+      (canDeleteTemplates?'<button class="ghost danger" data-delete-template="'+t.id+'">🗑️ EXCLUIR</button>':'')+
+      '</div></div>').join('')+'</div>';
+  document.getElementById('nt').onclick=()=>templateForm();
+  c.querySelectorAll('[data-use]').forEach(b=>b.onclick=async()=>{
+    const {data:t,error:te}=await sb.from('rz7_proof_templates').select('*').eq('id',b.dataset.use).single();
+    if(te)return toast(te.message);
+    const n=(await sb.from('rz7_proofs').select('number').order('number',{ascending:false}).limit(1)).data?.[0]?.number+1||1;
+    const {data:p,error}=await sb.from('rz7_proofs').insert({number:n,code:'RZ7-'+String(n).padStart(3,'0'),name:t.name,description:t.description,time_limit_seconds:t.time_limit_seconds,participant_limit:t.participant_limit,visibility:t.visibility,created_by:me.id,template_id:t.id}).select().single();
+    if(error)return toast(error.message);
+    const {error:qerr}=await sb.rpc('rz7_replace_proof_questions',{p_proof:p.id,p_questions:t.questions||[]});
+    if(qerr)return toast(qerr.message);
+    toast('Modelo carregado. Revise e configure sua nova prova antes de abrir.');
+    proofForm(p.id)
+  });
+  c.querySelectorAll('[data-delete-template]').forEach(b=>b.onclick=async()=>{
+    if(!canDeleteTemplates)return toast('Você não possui permissão para excluir modelos.');
+    const id=b.dataset.deleteTemplate;
+    const {data:t,error:te}=await sb.from('rz7_proof_templates').select('id,name').eq('id',id).single();
+    if(te)return toast(te.message);
+    if(!confirm('⚠️ EXCLUIR MODELO\\n\\nExcluir permanentemente o modelo "'+t.name+'"?\\n\\nIsso remove apenas o modelo salvo. Provas já criadas a partir dele não serão apagadas.\\n\\nDeseja continuar?'))return;
+    const {error}=await sb.from('rz7_proof_templates').delete().eq('id',id);
+    if(error)return toast('Não foi possível excluir o modelo: '+error.message);
+    toast('Modelo excluído permanentemente.');
+    templatesAdmin(c);
+  });
+}
 function templateForm(){
   let templateQuestions=[{question:'',points:1,options:[{label:'A',is_correct:true},{label:'B',is_correct:false}]}];
   document.getElementById('adminContent').innerHTML='<div class="card"><h2>💾 NOVO MODELO</h2><form id="tf" class="form">'+
