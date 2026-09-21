@@ -72,49 +72,41 @@ function candidateRegister(){app.innerHTML='<div class="card" style="max-width:5
 async function instructorRegister(){
   const {data:cu}=await sbCandidate.auth.getUser();
   if(cu?.user){
-    app.innerHTML='<div class="card" style="max-width:560px;margin:auto"><h1>🛡️ SOLICITAR ACESSO COMO INSTRUTOR</h1><p class="muted">Esta conta já está registrada. A solicitação será vinculada à mesma identidade RZ7, sem criar uma segunda conta Auth.</p><div class="card" style="margin-top:12px"><b>Como funciona</b><p class="small muted">Você envia a solicitação e aguarda a análise do Supremo. Até a aprovação, o acesso de instrutor permanece bloqueado.</p></div><button class="primary" id="requestInstructor">ENVIAR SOLICITAÇÃO</button><button class="ghost" id="backCandidate" style="margin-top:10px">← VOLTAR</button></div>';
-    document.getElementById('backCandidate').onclick=()=>candidate();
+    app.innerHTML='<div class="card" style="max-width:560px;margin:auto"><h1>📝 REGISTRO DE INSTRUTOR</h1><p class="muted">Sua conta de candidato já está autenticada neste navegador. A solicitação será enviada para esta mesma identidade RZ7, sem misturar o painel do candidato com a área de instrutores.</p><div class="notice"><b>Solicitação de acesso</b><br><span class="small">Você continuará sendo candidato normalmente enquanto aguarda a análise. O acesso de instrutor só será liberado após sua aprovação.</span></div><div class="actions" style="margin-top:14px"><button class="primary" id="requestInstructor">ENVIAR SOLICITAÇÃO</button><button class="ghost" id="backAdmin">← VOLTAR</button></div></div>';
+    document.getElementById('backAdmin').onclick=()=>admin();
     document.getElementById('requestInstructor').onclick=async()=>{
       const b=document.getElementById('requestInstructor');b.disabled=true;b.textContent='ENVIANDO...';
       const {error}=await sbCandidate.rpc('rz7_submit_instructor_application');
       b.disabled=false;b.textContent='ENVIAR SOLICITAÇÃO';
       if(error)return toast(error.message);
-      localStorage.setItem('rz7_instructor_registered','1');
-      toast('Solicitação enviada. Aguarde a análise da liderança.');
-      candidate();
+      toast('Solicitação enviada ao Supremo. Aguarde a aprovação.');
+      admin();
     };
     return;
   }
-  app.innerHTML='<div class="card" style="max-width:560px;margin:auto"><h1>📝 REGISTRAR-SE COMO INSTRUTOR</h1><p class="muted">O cadastro cria ou utiliza sua identidade RZ7. Se o e-mail já estiver cadastrado como candidato, use a mesma senha para enviar a solicitação. Nenhuma segunda conta Auth será criada.</p><form id="ireg" class="form"><input name="name" placeholder="Nome" required><input name="roblox" placeholder="Roblox" required><input name="discord" placeholder="Discord" required><input name="email" type="email" placeholder="E-mail" required><input name="password" type="password" placeholder="Senha" required><input name="confirm" type="password" placeholder="Confirmar senha" required><button class="primary">ENVIAR SOLICITAÇÃO</button></form></div>';
+  app.innerHTML='<div class="card" style="max-width:560px;margin:auto"><h1>📝 REGISTRAR-SE COMO INSTRUTOR</h1><p class="muted">Este cadastro é feito exclusivamente pela área de instrutores. O envio do formulário cria a solicitação, mas não libera o acesso imediatamente.</p><form id="ireg" class="form"><input name="name" placeholder="Nome" required><input name="roblox" placeholder="Roblox" required><input name="discord" placeholder="Discord" required><input name="email" type="email" placeholder="E-mail" required><input name="password" type="password" placeholder="Senha" required><input name="confirm" type="password" placeholder="Confirmar senha" required><label><input type="checkbox" name="terms" required> Aceito os termos e as regras da RZ7.</label><button class="primary">ENVIAR SOLICITAÇÃO</button></form><button class="ghost" id="backAdmin" style="margin-top:10px">← VOLTAR</button></div>';
+  document.getElementById('backAdmin').onclick=()=>admin();
   document.getElementById('ireg').onsubmit=async e=>{
     e.preventDefault();const f=new FormData(e.currentTarget);
     if(f.get('password')!==f.get('confirm'))return toast('As senhas não coincidem.');
     const email=String(f.get('email')).trim().toLowerCase(),password=String(f.get('password'));
-    let created=false;
     const {data,error}=await sbAdmin.auth.signUp({email,password,options:{data:{name:f.get('name'),roblox:f.get('roblox'),discord:f.get('discord'),registration_type:'instructor'}}});
-    if(!error&&data?.session){
-      created=true;
-    }else if(error){
+    if(error){
       const existing=String(error.message||'').toLowerCase().includes('already registered')||String(error.message||'').toLowerCase().includes('já está registrado');
       if(!existing)return toast(error.message);
-      const {data:login,error:le}=await sbAdmin.auth.signInWithPassword({email,password});
-      if(le||!login?.user)return toast('Não foi possível acessar a conta existente. Use a senha já cadastrada para esta conta.');
-    }else if(!data?.session){
-      return toast('Não foi possível iniciar a sessão desta conta.');
+      return toast('Este e-mail já possui uma conta RZ7. Entre como candidato neste navegador ou use a senha já cadastrada para solicitar o acesso de instrutor.');
     }
+    if(!data?.session||!data?.user)return toast('Não foi possível concluir o registro.');
     const {error:ae}=await sbAdmin.rpc('rz7_submit_instructor_application');
-    if(ae){
-      await sbAdmin.auth.signOut();
-      return toast(ae.message);
-    }
-    localStorage.setItem('rz7_instructor_registered','1');
     await sbAdmin.auth.signOut();
-    toast(created?'Solicitação enviada ao Supremo. Você só poderá entrar como instrutor após a aprovação e atribuição do cargo.':'Solicitação enviada ao Supremo usando a conta RZ7 já existente. Aguarde a aprovação.');
+    if(ae)return toast(ae.message);
+    toast('Solicitação enviada ao Supremo. Após a aprovação, você poderá entrar pela área de instrutores com o e-mail e a senha cadastrados.');
     admin();
   };
-}function forgot(kind='candidate'){useAuth(kind);app.innerHTML='<div class="card" style="max-width:520px;margin:auto"><h1>🔑 ESQUECI MINHA SENHA</h1><p class="muted">Digite o e-mail da conta. Você receberá um link para abrir a tela de nova senha.</p><form id="fp" class="form"><input name="email" type="email" placeholder="E-mail" required><button class="primary">ENVIAR LINK</button></form></div>';document.getElementById('fp').onsubmit=async e=>{e.preventDefault();const email=new FormData(e.currentTarget).get('email');const {error}=await sb.auth.resetPasswordForEmail(email,{redirectTo:location.origin+location.pathname+'?reset=1&type='+encodeURIComponent(kind)});if(error)return toast(error.message);toast('Se o e-mail estiver cadastrado, o link de recuperação foi enviado.');}}
+}
+function forgot(kind='candidate'){useAuth(kind);app.innerHTML='<div class="card" style="max-width:520px;margin:auto"><h1>🔑 ESQUECI MINHA SENHA</h1><p class="muted">Digite o e-mail da conta. Você receberá um link para abrir a tela de nova senha.</p><form id="fp" class="form"><input name="email" type="email" placeholder="E-mail" required><button class="primary">ENVIAR LINK</button></form></div>';document.getElementById('fp').onsubmit=async e=>{e.preventDefault();const email=new FormData(e.currentTarget).get('email');const {error}=await sb.auth.resetPasswordForEmail(email,{redirectTo:location.origin+location.pathname+'?reset=1&type='+encodeURIComponent(kind)});if(error)return toast(error.message);toast('Se o e-mail estiver cadastrado, o link de recuperação foi enviado.');}}
 async function resetPage(kind='candidate'){useAuth(kind);app.innerHTML='<div class="card" style="max-width:520px;margin:auto"><h1>🔐 NOVA SENHA</h1><form id="rp" class="form"><input name="p" type="password" placeholder="Nova senha" required><input name="c" type="password" placeholder="Confirmar nova senha" required><button class="primary">ALTERAR SENHA</button></form></div>';document.getElementById('rp').onsubmit=async e=>{e.preventDefault();const f=new FormData(e.currentTarget);if(f.get('p')!==f.get('c'))return toast('As senhas não coincidem.');const {error}=await sb.auth.updateUser({password:f.get('p')});if(error)return toast(error.message);toast('Senha alterada com sucesso.');history.replaceState({},'',location.pathname);await loadMe();go('home')}}
-async function admin(){useAuth('admin');await loadMe();if(me&&profile&&hasAdminAccess())return adminPanel();const canRegister=localStorage.getItem('rz7_instructor_registered')!=='1';app.innerHTML='<div class="back"><button class="ghost" onclick="go(\'home\')">← VOLTAR</button></div>'+authCard('👑 ADMINISTRAÇÃO',canRegister);document.getElementById('authForm').onsubmit=async e=>{e.preventDefault();const f=new FormData(e.currentTarget);const {data,error}=await sb.auth.signInWithPassword({email:f.get('email'),password:f.get('password')});if(error)return toast(error.message);me=data.user||null;await loadMe();if(!me)return toast('Sessão administrativa não foi criada.');if(!profile)return toast('O perfil administrativo não foi encontrado para esta conta.');if(!hasAdminAccess())return toast('Sua conta ainda não foi aprovada como instrutor. Aguarde a análise do Supremo.');adminPanel()};document.getElementById('forgot').onclick=()=>forgot('admin');const rb=document.getElementById('register');if(rb)rb.onclick=()=>instructorRegister()}
+async function admin(){useAuth('admin');await loadMe();if(me&&profile&&hasAdminAccess())return adminPanel();app.innerHTML='<div class="back"><button class="ghost" onclick="go(\\'home\\')">← VOLTAR AO INÍCIO</button></div><div class="card" style="max-width:560px;margin:auto"><div class="sectionTitle"><h1>👑 ÁREA DE INSTRUTORES</h1></div><p class="muted">Área exclusiva para instrutores aprovados pela liderança.</p>'+authCard('🔐 ENTRAR COMO INSTRUTOR',true)+'</div>';document.getElementById('authForm').onsubmit=async e=>{e.preventDefault();const f=new FormData(e.currentTarget);const {data,error}=await sbAdmin.auth.signInWithPassword({email:f.get('email'),password:f.get('password')});if(error)return toast(error.message);me=data.user||null;await loadMe();if(!me||!profile)return toast('Não foi possível carregar o perfil desta conta.');if(!hasAdminAccess()){await sbAdmin.auth.signOut();return toast('Esta conta ainda não possui acesso de instrutor aprovado. Aguarde a aprovação do Supremo.');}adminPanel()};document.getElementById('forgot').onclick=()=>forgot('admin');const rb=document.getElementById('register');if(rb)rb.textContent='📝 REGISTRAR-SE COMO INSTRUTOR';if(rb)rb.onclick=()=>instructorRegister()}
 function adminPanel(){const nav=[['dashboard','📊 PAINEL',true],['proofs','📝 PROVAS',can('manage_proofs')||can('manage_own_proofs')],['templates','💾 MODELOS',can('manage_templates')],['requests','🛡️ SOLICITAÇÕES',can('manage_instructor_requests')],['access','🔐 PEDIDOS DE ACESSO',can('manage_proofs')||can('manage_own_proofs')||supreme],['punishments','⚠️ PUNIÇÕES',can('apply_punishment')||can('punish_instructors')],['permissions','⚙️ CARGOS/PERMISSÕES',can('manage_roles_permissions')],['identity','🖼️ IDENTIDADE',can('manage_identity')],['logs','📜 LOGS',can('view_audit_logs')]];app.innerHTML='<div class="sectionTitle"><h1>👑 '+esc(profile?.account_type==='admin'?'ADMINISTRAÇÃO':'ÁREA DO INSTRUTOR')+'</h1><button class="ghost" id="logout">SAIR</button></div><div class="adminbar">'+nav.filter(x=>x[2]).map(x=>'<button class="ghost gold" data-admin="'+x[0]+'">'+x[1]+'</button>').join('')+'</div><div id="adminContent"></div>';document.getElementById('logout').onclick=async()=>{await sb.auth.signOut();go('home')};document.querySelectorAll('[data-admin]').forEach(b=>b.onclick=()=>adminSection(b.dataset.admin));adminSection('dashboard')}
 async function adminSection(x){const c=document.getElementById('adminContent');if(x==='dashboard'){
   const [{count:proofs},{count:req},{count:accessReq},{count:attempts}]=await Promise.all([
@@ -511,7 +503,7 @@ async function candidateDash(){
   if(re)return toast(re.message);
   const done=new Set((attempts||[]).map(a=>a.proof_id)),reqMap=new Map((requests||[]).map(r=>[r.proof_id,r]));
   app.innerHTML='<div class="sectionTitle"><h1>👤 PAINEL DO CANDIDATO</h1><button class="ghost" id="out">SAIR</button></div>'+
-    '<div class="card"><h3>Meu cadastro</h3><p>'+esc(profile.name)+'<br>'+esc(profile.roblox)+' · '+esc(profile.discord)+'</p><div class="actions" style="margin-top:12px">'+(profile.instructor_enabled?'<span class="pill ok">🛡️ ACESSO DE INSTRUTOR ATIVO</span>':'<span class="small muted">Para solicitar acesso como instrutor, utilize <b>👑 ADMINISTRAÇÃO</b>.</span>')+'</div></div>'+
+    '<div class="card"><h3>Meu cadastro</h3><p>'+esc(profile.name)+'<br>'+esc(profile.roblox)+' · '+esc(profile.discord)+'</p></div>'+
     '<div class="card" style="margin-top:14px"><h2>📝 PROVAS DISPONÍVEIS</h2><div class="list">'+
     (proofs||[]).map(p=>{
       const r=reqMap.get(p.id),doneProof=done.has(p.id);
@@ -533,7 +525,7 @@ async function candidateDash(){
   document.getElementById('out').onclick=async()=>{await sbCandidate.auth.signOut();document.querySelector('#menu [data-go="admin"]').style.display='block';go('home')};
   const instructorRequestBtn=document.getElementById('instructorRequestBtn');
   if(instructorRequestBtn) instructorRequestBtn.onclick=async()=>{const {data,error}=await sbCandidate.rpc('rz7_submit_instructor_application');if(error)return toast(error.message);toast(data?.status==='pending'?'Solicitação enviada. Aguarde a análise da liderança.':'Solicitação registrada.');candidateDash()};
-  document.querySelector('#menu [data-go="admin"]').style.display='none';
+  document.querySelector('#menu [data-go="admin"]').style.display='block';
   app.querySelectorAll('[data-start]').forEach(b=>b.onclick=()=>startOrRequest(b.dataset.start));
 }
 
