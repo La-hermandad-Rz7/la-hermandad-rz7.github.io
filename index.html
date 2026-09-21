@@ -342,13 +342,33 @@ const f=new FormData(e.currentTarget),seconds=Number(f.get('time'));
 if(!Number.isInteger(seconds)||seconds<1||seconds>2592000)return toast('O tempo deve estar entre 1 e 2.592.000 segundos (30 dias).');
 const payload={name:f.get('name'),description:f.get('description'),time_limit_seconds:seconds,participant_limit:f.get('limit')?Number(f.get('limit')):null,visibility:f.get('visibility')};
 if(p){
- let r;if(allowId)r=await sb.from('rz7_proofs').update({number:Number(f.get('number')),code:f.get('code'),...payload}).eq('id',p.id);else r=await sb.from('rz7_proofs').update(payload).eq('id',p.id);
- if(r.error)return toast(r.error.message);
- const {error:qerr}=await sb.rpc('rz7_replace_proof_questions',{p_proof:p.id,p_questions:initialQuestions});if(qerr)return toast(qerr.message);
+  const newNumber=Number(f.get('number')),newCode=String(f.get('code')||'').trim();
+  if(allowId){
+    const {data:dupNum}=await sb.from('rz7_proofs').select('id').eq('number',newNumber).neq('id',p.id).maybeSingle();
+    if(dupNum)return toast('O número '+newNumber+' já está sendo usado por outra prova.');
+    const {data:dupCode}=await sb.from('rz7_proofs').select('id').eq('code',newCode).neq('id',p.id).maybeSingle();
+    if(dupCode)return toast('O código '+newCode+' já está sendo usado por outra prova.');
+  }
+  let r;
+  if(allowId)r=await sb.from('rz7_proofs').update({number:newNumber,code:newCode,...payload}).eq('id',p.id);
+  else r=await sb.from('rz7_proofs').update(payload).eq('id',p.id);
+  if(r.error)return toast('Não foi possível salvar a prova: '+r.error.message);
+  const {error:qerr}=await sb.rpc('rz7_replace_proof_questions',{p_proof:p.id,p_questions:initialQuestions});
+  if(qerr)return toast(qerr.message);
 }else{
- const {data:np,error:r}=await sb.from('rz7_proofs').insert({number:Number(f.get('number')),code:f.get('code'),...payload,created_by:me.id}).select().single();
- if(r)return toast(r.message);
- const {error:qerr}=await sb.rpc('rz7_replace_proof_questions',{p_proof:np.id,p_questions:initialQuestions});if(qerr)return toast(qerr.message);
+  let number=Number(f.get('number')),code=String(f.get('code')||'').trim();
+  const {data:dupNum}=await sb.from('rz7_proofs').select('id,number').eq('number',number).maybeSingle();
+  if(dupNum){
+    if(supreme)return toast('O número '+number+' já existe. Escolha outro número para esta nova prova.');
+    number=(await sb.from('rz7_proofs').select('number').order('number',{ascending:false}).limit(1)).data?.[0]?.number+1||1;
+    code='RZ7-'+String(number).padStart(3,'0');
+  }
+  const {data:dupCode}=await sb.from('rz7_proofs').select('id').eq('code',code).maybeSingle();
+  if(dupCode)return toast('O código '+code+' já está sendo usado por outra prova.');
+  const {data:np,error:r}=await sb.from('rz7_proofs').insert({number,code,...payload,created_by:me.id}).select().single();
+  if(r)return toast('Não foi possível criar a prova: '+r.message);
+  const {error:qerr}=await sb.rpc('rz7_replace_proof_questions',{p_proof:np.id,p_questions:initialQuestions});
+  if(qerr)return toast(qerr.message);
 }
 toast('Prova salva.');adminSection('proofs')
 }
