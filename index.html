@@ -94,7 +94,14 @@ async function instructorRegister(){
     if(error){
       const existing=String(error.message||'').toLowerCase().includes('already registered')||String(error.message||'').toLowerCase().includes('já está registrado');
       if(!existing)return toast(error.message);
-      return toast('Este e-mail já possui uma conta RZ7. Entre como candidato neste navegador ou use a senha já cadastrada para solicitar o acesso de instrutor.');
+      const login=await sbAdmin.auth.signInWithPassword({email,password});
+      if(login.error)return toast('Este e-mail já possui uma conta RZ7. A senha informada não corresponde à conta existente. Use a senha já cadastrada para solicitar o acesso de instrutor.');
+      const {error:ae}=await sbAdmin.rpc('rz7_submit_instructor_application');
+      await sbAdmin.auth.signOut();
+      if(ae)return toast(ae.message);
+      toast('A conta RZ7 existente foi reconhecida. A solicitação de instrutor foi enviada ao Supremo.');
+      admin();
+      return;
     }
     if(!data?.session||!data?.user)return toast('Não foi possível concluir o registro.');
     const {error:ae}=await sbAdmin.rpc('rz7_submit_instructor_application');
