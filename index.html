@@ -554,7 +554,7 @@ async function candidateDash(){
 
   const {data:proofs,error:pe}=await sb.from('rz7_proofs').select('*').eq('status','open').order('number');
   if(pe)return toast(pe.message);
-  const {data:attempts,error:ae}=await sb.from('rz7_proof_attempts').select('*').eq('candidate_id',me.id).order('created_at',{ascending:false});
+  const {data:attempts,error:ae}=await sb.from('rz7_proof_attempts').select('*').eq('candidate_id',me.id).order('started_at',{ascending:false});
   if(ae)return toast(ae.message);
   const {data:requests,error:re}=await sb.from('rz7_proof_access_requests').select('*').eq('candidate_id',me.id).order('created_at',{ascending:false});
   if(re)return toast(re.message);
