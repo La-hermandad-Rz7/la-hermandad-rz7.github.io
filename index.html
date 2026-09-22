@@ -597,21 +597,90 @@ async function permissionsAdmin(c){
   const {data,error}=await sb.from('rz7_profiles').select('user_id,name,email,account_type,account_status,role_id').in('account_type',['instructor','admin']).eq('account_status','active').order('created_at');
   if(error)return toast(error.message);
   const {data:roles}=await sb.from('rz7_roles').select('*').order('level',{ascending:false});
-  c.innerHTML='<h2>⚙️ CARGOS E PERMISSÕES</h2><p class="small muted">Aqui aparecem somente contas administrativas ativas e instrutores que já foram aprovados pela liderança.</p><div class="list">'+
+  c.innerHTML='<h2>⚙️ CARGOS E PERMISSÕES</h2>'+
+    '<p class="small muted">Cada cargo possui um conjunto de permissões padrão. Ao trocar o cargo, os overrides individuais anteriores são removidos e a conta volta automaticamente aos padrões do novo cargo.</p>'+
+    '<div class="list">'+
     (data||[]).map(u=>'<div class="row"><div><b>'+esc(u.name||u.email)+'</b><div class="small muted">'+(u.account_type==='instructor'?'🛡️ INSTRUTOR':'👑 ADMINISTRADOR')+' · '+esc(u.account_status)+'</div></div><div class="actions"><select data-user="'+u.user_id+'">'+(roles||[]).map(r=>'<option value="'+r.id+'" '+(r.id===u.role_id?'selected':'')+'>'+esc(r.name)+'</option>').join('')+'</select><button class="ghost" data-perm="'+u.user_id+'">PERMISSÕES</button>'+(u.account_type==='instructor'&&(supreme||can('manage_instructors'))?'<button class="ghost danger" data-remove-instructor="'+u.user_id+'">REMOVER CARGO</button>':'')+(supreme&&u.user_id!==me.id?'<button class="ghost danger" data-delete="'+u.user_id+'">EXCLUIR</button>':'')+'</div></div>').join('')+
-    '</div><p class="small muted">Solicitações pendentes ou negadas não aparecem aqui e não recebem acesso à Administração.</p>';
-  c.querySelectorAll('[data-user]').forEach(s=>s.onchange=async()=>{const {error}=await sb.rpc('rz7_set_user_role',{p_user:s.dataset.user,p_role:s.value});if(error){toast(error.message);permissionsAdmin(c)}});
-  c.querySelectorAll('[data-perm]').forEach(b=>b.onclick=()=>userPermissionEditor(b.dataset.perm));
-  c.querySelectorAll('[data-delete]').forEach(b=>b.onclick=async()=>{if(!confirm('Excluir esta conta permanentemente?'))return;const {error}=await sb.functions.invoke('rz7-account-action',{body:{action:'delete',user_id:b.dataset.delete}});if(error)return toast(error.message);toast('Conta excluída.');permissionsAdmin(c)})
-  c.querySelectorAll('[data-remove-instructor]').forEach(b=>b.onclick=async()=>{
+    '</div><p class="small muted">💡 O cargo define a base. As permissões individuais servem apenas para liberar ou bloquear algo especificamente para aquela conta.</p>';
+  c.querySelectorAll('[data-user]').forEach(sel=>sel.onchange=async()=>{
+    const {error}=await sb.rpc('rz7_set_user_role',{p_user:sel.dataset.user,p_role:sel.value});
+    if(error){toast(error.message);return permissionsAdmin(c)}
+    toast('Cargo alterado. As permissões individuais anteriores foram restauradas para os padrões do novo cargo.');
+    permissionsAdmin(c);
+  });
+  c.querySelectorAll('[data-perm]').forEach(btn=>btn.onclick=()=>userPermissionEditor(btn.dataset.perm));
+  c.querySelectorAll('[data-delete]').forEach(btn=>btn.onclick=async()=>{
+    if(!confirm('Excluir esta conta permanentemente?'))return;
+    const {error}=await sb.functions.invoke('rz7-account-action',{body:{action:'delete',user_id:btn.dataset.delete}});
+    if(error)return toast(error.message);
+    toast('Conta excluída.');
+    permissionsAdmin(c);
+  });
+  c.querySelectorAll('[data-remove-instructor]').forEach(btn=>btn.onclick=async()=>{
     if(!confirm('Remover o cargo de instrutor desta conta? A conta continuará existindo como candidato, mas perderá o cargo e todas as permissões individuais de instrutor.'))return;
-    const {error}=await sb.rpc('rz7_remove_instructor_role',{p_user:b.dataset.removeInstructor});
+    const {error}=await sb.rpc('rz7_remove_instructor_role',{p_user:btn.dataset.removeInstructor});
     if(error)return toast(error.message);
     toast('Cargo de instrutor removido. A conta continua como candidato.');
-    permissionsAdmin(c)
-  })
+    permissionsAdmin(c);
+  });
 }
-async function userPermissionEditor(uid){const {data:ps}=await sb.from('rz7_permissions').select('*').order('critical',{ascending:false});const {data:ups}=await sb.from('rz7_user_permissions').select('permission_id,allowed').eq('user_id',uid);const map=new Map((ups||[]).map(x=>[x.permission_id,x.allowed]));document.getElementById('adminContent').innerHTML='<div class="card"><div class="sectionTitle"><h2>⚙️ PERMISSÕES INDIVIDUAIS</h2><button class="ghost" id="backPerm">← VOLTAR</button></div><p class="muted">O cargo fornece permissões padrão. Aqui ficam os overrides individuais. Permissões críticas só podem ser alteradas pelo Administrador Supremo.</p><div class="list">'+(ps||[]).map(p=>'<label class="row"><span><b>'+esc(p.name)+'</b><div class="small muted">'+esc(p.description||'')+(p.critical?' · 🔴 CRÍTICA':'')+'</div></span><input type="checkbox" data-pid="'+p.id+'" '+(map.get(p.id)===true?'checked':'')+' '+(p.critical&&!supreme?'disabled':'')+'></label>').join('')+'</div></div>';document.getElementById('backPerm').onclick=()=>adminSection('permissions');document.querySelectorAll('[data-pid]').forEach(cb=>cb.onchange=async()=>{const pid=cb.dataset.pid;if(!supreme&&ps.find(p=>p.id===pid)?.critical){cb.checked=!cb.checked;return toast('Somente o Administrador Supremo pode alterar esta permissão.')}const {error}=await sb.from('rz7_user_permissions').upsert({user_id:uid,permission_id:pid,allowed:cb.checked,updated_at:new Date().toISOString()},{onConflict:'user_id,permission_id'});if(error)toast(error.message)})}async function identityAdmin(c){
+async function userPermissionEditor(uid){
+  const [{data:profileRow,error:profileError},{data:ps,error:psError}]=await Promise.all([
+    sb.from('rz7_profiles').select('user_id,name,email,role_id').eq('user_id',uid).single(),
+    sb.from('rz7_permissions').select('*').order('critical',{ascending:false}).order('name')
+  ]);
+  if(profileError||psError)return toast(profileError?.message||psError?.message||'Não foi possível carregar as permissões.');
+  const {data:rolePerms,error:roleError}=await sb.from('rz7_role_permissions').select('permission_id').eq('role_id',profileRow.role_id);
+  if(roleError)return toast(roleError.message);
+  const {data:ups,error:upError}=await sb.from('rz7_user_permissions').select('permission_id,allowed').eq('user_id',uid);
+  if(upError)return toast(upError.message);
+  const defaults=new Set((rolePerms||[]).map(x=>x.permission_id));
+  const overrides=new Map((ups||[]).map(x=>[x.permission_id,x.allowed]));
+  const roleName=(await sb.from('rz7_roles').select('name').eq('id',profileRow.role_id).single()).data?.name||'Cargo atual';
+
+  document.getElementById('adminContent').innerHTML='<div class="card">'+
+    '<div class="sectionTitle"><div><h2>⚙️ PERMISSÕES INDIVIDUAIS</h2><div class="small muted">'+esc(profileRow.name||profileRow.email)+' · '+esc(roleName)+'</div></div><button class="ghost" id="backPerm">← VOLTAR</button></div>'+
+    '<div class="card" style="margin:12px 0;border-color:#5d4714">'+
+      '<b>🏛️ COMO FUNCIONA</b>'+
+      '<p class="small muted" style="margin-bottom:6px">O cargo acima fornece as permissões padrão automaticamente.</p>'+
+      '<p class="small muted" style="margin-bottom:6px">Você pode liberar uma permissão extra ou bloquear uma permissão padrão somente para esta conta.</p>'+
+      '<p class="small muted">🔄 Ao restaurar os padrões, todos os overrides desta conta são removidos e o cargo volta a ser a única fonte das permissões.</p>'+
+    '</div>'+
+    '<div class="actions" style="margin-bottom:12px"><button class="ghost gold" id="resetRoleDefaults">🔄 RESTAURAR PADRÕES DO CARGO</button></div>'+
+    '<div class="list">'+(ps||[]).map(p=>{
+      const hasOverride=overrides.has(p.id);
+      const defaultAllowed=defaults.has(p.id);
+      const effective=hasOverride?!!overrides.get(p.id):defaultAllowed;
+      const status=hasOverride?(effective?'➕ LIBERADA MANUALMENTE':'➖ BLOQUEADA MANUALMENTE'):(defaultAllowed?'🏛️ PADRÃO DO CARGO':'○ NÃO CONCEDIDA PELO CARGO');
+      return '<label class="row"><span><b>'+esc(p.name)+'</b><div class="small muted">'+esc(p.description||'')+(p.critical?' · 🔴 CRÍTICA':'')+' · '+status+'</div></span><input type="checkbox" data-pid="'+p.id+'" data-default="'+(defaultAllowed?'1':'0')+'" '+(effective?'checked':'')+' '+(p.critical&&!supreme?'disabled':'')+'></label>';
+    }).join('')+'</div></div>';
+
+  document.getElementById('backPerm').onclick=()=>adminSection('permissions');
+  document.getElementById('resetRoleDefaults').onclick=async()=>{
+    if(!confirm('Restaurar todas as permissões padrão deste cargo? Isso removerá todos os ajustes manuais desta conta.'))return;
+    const {error}=await sb.rpc('rz7_reset_user_permissions',{p_user:uid});
+    if(error)return toast(error.message);
+    toast('Permissões padrão restauradas.');
+    userPermissionEditor(uid);
+  };
+  document.querySelectorAll('[data-pid]').forEach(cb=>cb.onchange=async()=>{
+    const pid=cb.dataset.pid;
+    const p=ps.find(x=>x.id===pid);
+    if(p?.critical&&!supreme){cb.checked=!cb.checked;return toast('Somente o Administrador Supremo pode alterar esta permissão.');}
+    const defaultAllowed=cb.dataset.default==='1';
+    if(cb.checked===defaultAllowed){
+      const {error}=await sb.from('rz7_user_permissions').delete().eq('user_id',uid).eq('permission_id',pid);
+      if(error)return toast(error.message);
+      toast('Voltando ao padrão do cargo.');
+    }else{
+      const {error}=await sb.from('rz7_user_permissions').upsert({user_id:uid,permission_id:pid,allowed:cb.checked,updated_at:new Date().toISOString()},{onConflict:'user_id,permission_id'});
+      if(error)return toast(error.message);
+      toast(cb.checked?'Permissão liberada manualmente.':'Permissão bloqueada manualmente.');
+    }
+    userPermissionEditor(uid);
+  });
+}
+async function identityAdmin(c){
   const s=await getSettings();
   const logo=s.logo_url?.replace(/^"|"$/g,'')||'';
   c.innerHTML='<div class="card"><h2>🖼️ IDENTIDADE RZ7</h2>'+
