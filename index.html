@@ -317,15 +317,11 @@ document.getElementById('adminContent').innerHTML='<div class="card"><h2>📝 '+
 const qb=document.getElementById('questionBuilder');
 function letter(i){return String.fromCharCode(65+i)}
 function renderQuestions(){
- qb.innerHTML=initialQuestions.map((q,qi)=>'<div class="card questionCard" data-q="'+qi+'" style="margin-top:12px">'+
- '<div class="sectionTitle"><h3>QUESTÃO '+(qi+1)+'</h3><button type="button" class="ghost danger" data-remove-q="'+qi+'">✕ REMOVER</button></div>'+
- '<textarea data-field="question" placeholder="Digite a pergunta..." required>'+esc(q.question||'')+'</textarea><select data-field="type"><option value="choice" '+(q.question_type!=='text'?'selected':'')+'>Múltipla escolha</option><option value="text" '+(q.question_type==='text'?'selected':'')+'>Resposta escrita</option></select>'+
- '<input data-field="points" type="number" min="1" value="'+Number(q.points||1)+'" placeholder="Pontos">'+
- (q.question_type==='text'?'':'<div class="small muted" style="margin:8px 0">ALTERNATIVAS — marque uma como correta</div>'+
- '<div class="options">'+q.options.map((o,oi)=>'<div class="actions optionRow" data-option="'+oi+'" style="margin:6px 0"><input data-field="correct" type="radio" name="correct_'+qi+'" '+(o.is_correct?'checked':'')+'><input data-field="label" value="'+esc(o.label||letter(oi))+'" placeholder="Alternativa '+letter(oi)+'" style="flex:1" required><button type="button" class="ghost danger" data-remove-o="'+qi+','+oi+'">✕</button></div>').join('')+'</div>'+
- '<button type="button" class="ghost" data-add-o="'+qi+'">＋ ADICIONAR ALTERNATIVA</button></div>').join('');
-}
-function syncFromDom(){
+ qb.innerHTML=initialQuestions.map((q,qi)=>{
+   const opts=q.question_type==='text'?'':('<div class="small muted" style="margin:8px 0">ALTERNATIVAS — marque uma como correta</div><div class="options">'+q.options.map((o,oi)=>'<div class="actions optionRow" data-option="'+oi+'" style="margin:6px 0"><input data-field="correct" type="radio" name="correct_'+qi+'" '+(o.is_correct?'checked':'')+'><input data-field="label" value="'+esc(o.label||letter(oi))+'" placeholder="Alternativa '+letter(oi)+'" style="flex:1" required><button type="button" class="ghost danger" data-remove-o="'+qi+','+oi+'">✕</button></div>').join('')+'</div><button type="button" class="ghost" data-add-o="'+qi+'">＋ ADICIONAR ALTERNATIVA</button>');
+   return '<div class="card questionCard" data-q="'+qi+'" style="margin-top:12px"><div class="sectionTitle"><h3>QUESTÃO '+(qi+1)+'</h3><button type="button" class="ghost danger" data-remove-q="'+qi+'">✕ REMOVER</button></div><textarea data-field="question" placeholder="Digite a pergunta..." required>'+esc(q.question||'')+'</textarea><select data-field="type"><option value="choice" '+(q.question_type!=='text'?'selected':'')+'>Múltipla escolha</option><option value="text" '+(q.question_type==='text'?'selected':'')+'>Resposta escrita</option></select><input data-field="points" type="number" min="1" value="'+Number(q.points||1)+'" placeholder="Pontos">'+opts+'</div>';
+ }).join('');
+}function syncFromDom(){
  initialQuestions=Array.from(qb.querySelectorAll('.questionCard')).map(card=>({question:card.querySelector('[data-field="question"]').value,question_type:card.querySelector('[data-field="type"]').value,points:Number(card.querySelector('[data-field="points"]').value)||1,options:Array.from(card.querySelectorAll('.optionRow')).map((row)=>({label:row.querySelector('[data-field="label"]').value,is_correct:row.querySelector('[data-field="correct"]').checked}))}));
 }
 renderQuestions();
@@ -431,26 +427,22 @@ function templateForm(){
     }));
   }
   function render(){
-    qb.innerHTML=templateQuestions.map((q,qi)=>'<div class="card questionCard" data-q="'+qi+'" style="margin-top:12px">'+
-      '<div class="sectionTitle"><h3>QUESTÃO '+(qi+1)+'</h3><button type="button" class="ghost danger" data-remove-tq="'+qi+'">✕ REMOVER</button></div>'+
-      '<textarea data-field="question" placeholder="Digite a pergunta..." required>'+esc(q.question||'')+'</textarea>'+
-      '<input data-field="points" type="number" min="1" value="'+Number(q.points||1)+'" placeholder="Pontos">'+
-      '<div class="small muted" style="margin:8px 0">ALTERNATIVAS — marque uma como correta</div>'+
-      '<div class="options">'+q.options.map((o,oi)=>'<div class="actions optionRow" data-option="'+oi+'" style="margin:6px 0"><input data-field="correct" type="radio" name="template_correct_'+qi+'" '+(o.is_correct?'checked':'')+'><input data-field="label" value="'+esc(o.label||letter(oi))+'" placeholder="Alternativa '+letter(oi)+'" style="flex:1" required><button type="button" class="ghost danger" data-remove-to="'+qi+','+oi+'">✕</button></div>').join('')+'</div>'+
-      '<button type="button" class="ghost" data-add-to="'+qi+'">＋ ADICIONAR ALTERNATIVA</button></div>'
-    ).join('');
+    qb.innerHTML=templateQuestions.map((q,qi)=>{
+      const opts=q.question_type==='text'?'':('<div class="small muted" style="margin:8px 0">ALTERNATIVAS — marque uma como correta</div><div class="options">'+q.options.map((o,oi)=>'<div class="actions optionRow" data-option="'+oi+'" style="margin:6px 0"><input data-field="correct" type="radio" name="template_correct_'+qi+'" '+(o.is_correct?'checked':'')+'><input data-field="label" value="'+esc(o.label||letter(oi))+'" placeholder="Alternativa '+letter(oi)+'" style="flex:1" required><button type="button" class="ghost danger" data-remove-to="'+qi+','+oi+'">✕</button></div>').join('')+'</div><button type="button" class="ghost" data-add-to="'+qi+'">＋ ADICIONAR ALTERNATIVA</button>');
+      return '<div class="card questionCard" data-q="'+qi+'" style="margin-top:12px"><div class="sectionTitle"><h3>QUESTÃO '+(qi+1)+'</h3><button type="button" class="ghost danger" data-remove-tq="'+qi+'">✕ REMOVER</button></div><textarea data-field="question" placeholder="Digite a pergunta..." required>'+esc(q.question||'')+'</textarea><select data-field="type"><option value="choice" '+(q.question_type!=='text'?'selected':'')+'>Múltipla escolha</option><option value="text" '+(q.question_type==='text'?'selected':'')+'>Resposta escrita</option></select><input data-field="points" type="number" min="1" value="'+Number(q.points||1)+'" placeholder="Pontos">'+opts+'</div>';
+    }).join('');
   }
   render();
   document.getElementById('addTemplateQuestion').onclick=()=>{
     sync();
-    templateQuestions.push({question:'',points:1,options:[{label:'A',is_correct:true},{label:'B',is_correct:false}]});
+    templateQuestions.push({question:'',question_type:'choice',points:1,options:[{label:'A',is_correct:true},{label:'B',is_correct:false}]});
     render();
   };
   qb.onclick=e=>{
     const rm=e.target.closest('[data-remove-tq]');
     if(rm){
       sync();templateQuestions.splice(Number(rm.dataset.removeTq),1);
-      if(!templateQuestions.length)templateQuestions.push({question:'',points:1,options:[{label:'A',is_correct:true},{label:'B',is_correct:false}]});
+      if(!templateQuestions.length)templateQuestions.push({question:'',question_type:'choice',points:1,options:[{label:'A',is_correct:true},{label:'B',is_correct:false}]});
       render();return;
     }
     const ro=e.target.closest('[data-remove-to]');
