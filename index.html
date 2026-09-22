@@ -281,7 +281,58 @@ async function proofForm(id=null){
  function renderQuestions(){qb.innerHTML=initialQuestions.map((q,qi)=>{const opts=q.question_type==='text'?'':('<div class="small muted" style="margin:8px 0">'+(q.question_type==='multiple'?'ALTERNATIVAS — marque todas as corretas':'ALTERNATIVAS — marque uma como correta')+'</div><div class="options">'+q.options.map((o,oi)=>'<div class="actions optionRow" data-option="'+oi+'" style="margin:6px 0"><input data-field="correct" type="'+(q.question_type==='multiple'?'checkbox':'radio')+'" name="correct_'+qi+'" '+(o.is_correct?'checked':'')+'><input data-field="label" value="'+esc(o.label||'')+'" placeholder="Texto da alternativa '+letter(oi)+'" style="flex:1" required><button type="button" class="ghost danger" data-remove-o="'+qi+','+oi+'">✕</button></div>').join('')+'</div><button type="button" class="ghost" data-add-o="'+qi+'">＋ ADICIONAR ALTERNATIVA</button>');return '<div class="card questionCard" data-q="'+qi+'" style="margin-top:12px"><div class="sectionTitle"><h3>QUESTÃO '+(qi+1)+'</h3><button type="button" class="ghost danger" data-remove-q="'+qi+'">✕ REMOVER</button></div><textarea data-field="question" placeholder="Digite a pergunta..." required>'+esc(q.question||'')+'</textarea><select data-field="type"><option value="single" '+(q.question_type==='single'?'selected':'')+'>🔘 Resposta única</option><option value="multiple" '+(q.question_type==='multiple'?'selected':'')+'>☑️ Múltipla escolha</option><option value="text" '+(q.question_type==='text'?'selected':'')+'>✍️ Resposta escrita</option></select><input data-field="points" type="number" min="0.01" step="0.01" value="'+Number(q.points||1)+'" placeholder="Pontos">'+opts+'</div>'}).join('')}
  function sync(){initialQuestions=Array.from(qb.querySelectorAll('.questionCard')).map(card=>({question:card.querySelector('[data-field="question"]').value,question_type:card.querySelector('[data-field="type"]').value,points:Number(card.querySelector('[data-field="points"]').value)||1,options:Array.from(card.querySelectorAll('.optionRow')).map(row=>({label:row.querySelector('[data-field="label"]').value,is_correct:row.querySelector('[data-field="correct"]').checked}))}))}
  renderQuestions();document.getElementById('addQuestion').onclick=()=>{sync();initialQuestions.push({question:'',question_type:'single',points:1,options:[{label:'',is_correct:true},{label:'',is_correct:false}]});renderQuestions()};qb.onchange=e=>{if(e.target.matches('[data-field="type"]')){sync();renderQuestions()}};qb.onclick=e=>{const rmq=e.target.closest('[data-remove-q]');if(rmq){sync();initialQuestions.splice(Number(rmq.dataset.removeQ),1);if(!initialQuestions.length)initialQuestions.push({question:'',question_type:'single',points:1,options:[{label:'',is_correct:true},{label:'',is_correct:false}]});renderQuestions();return}const rmo=e.target.closest('[data-remove-o]');if(rmo){sync();const [qi,oi]=rmo.dataset.removeO.split(',').map(Number);if(initialQuestions[qi].options.length<=2)return toast('Cada questão precisa ter pelo menos 2 alternativas.');initialQuestions[qi].options.splice(oi,1);if(!initialQuestions[qi].options.some(o=>o.is_correct))initialQuestions[qi].options[0].is_correct=true;renderQuestions();return}const addo=e.target.closest('[data-add-o]');if(addo){sync();const qi=Number(addo.dataset.addO);if(initialQuestions[qi].options.length>=6)return toast('Máximo de 6 alternativas por questão.');initialQuestions[qi].options.push({label:'',is_correct:false});renderQuestions()}};
- document.getElementById('pf').onsubmit=async e=>{e.preventDefault();sync();if(!initialQuestions.length)return toast('Adicione pelo menos uma questão.');for(let i=0;i<initialQuestions.length;i++){const q=initialQuestions[i];if(!q.question.trim())return toast('Preencha a questão '+(i+1)+'.');if(q.question_type!=='text'){if(q.options.length<2)return toast('A questão '+(i+1)+' precisa de pelo menos 2 alternativas.');const n=q.options.filter(o=>o.is_correct).length;if(!n)return toast('Marque pelo menos uma correta na questão '+(i+1)+'.');if(q.question_type==='single'&&n!==1)return toast('Resposta única exige exatamente 1 correta na questão '+(i+1)+'.');if(q.options.some(o=>!o.label.trim()))return toast('Preencha todas as alternativas da questão '+(i+1)+'.')}}const f=new FormData(e.currentTarget),seconds=Number(f.get('time'));if(!Number.isInteger(seconds)||seconds<1||seconds>2592000)return toast('O tempo deve estar entre 1 e 2.592.000 segundos (30 dias).');const payload={name:f.get('name'),description:f.get('description'),time_limit_seconds:seconds,participant_limit:f.get('limit')?Number(f.get('limit')):null,visibility:f.get('visibility')};if(p){const newNumber=Number(f.get('number')),newCode=String(f.get('code')||'').trim();if(allowId){const {data:dupNum}=await sb.from('rz7_proofs').select('id').eq('number',newNumber).neq('id',p.id).maybeSingle();if(dupNum)return toast('O número '+newNumber+' já está sendo usado por outra prova.');const {data:dupCode}=await sb.from('rz7_proofs').select('id').eq('code',newCode).neq('id',p.id).maybeSingle();if(dupCode)return toast('O código '+newCode+' já está sendo usado por outra prova.')}const r=allowId?await sb.from('rz7_proofs').update({number:newNumber,code:newCode,...payload}).eq('id',p.id):await sb.from('rz7_proofs').update(payload).eq('id',p.id);if(r.error)return toast('Não foi possível salvar a prova: '+r.error.message);const {error:qerr}=await sb.rpc('rz7_replace_proof_questions',{p_proof:p.id,p_questions:initialQuestions});if(qerr)return toast(qerr.message)}else{let number=Number(f.get('number')),code=String(f.get('code')||'').trim();if(!supreme){number=null;code=null}else{const {data:dupNum}=await sb.from('rz7_proofs').select('id').eq('number',number).maybeSingle();if(dupNum)return toast('O número '+number+' já existe. Escolha outro número.');const {data:dupCode}=await sb.from('rz7_proofs').select('id').eq('code',code).maybeSingle();if(dupCode)return toast('O código '+code+' já está sendo usado por outra prova.')}const insertPayload={...payload,created_by:me.id};if(supreme){insertPayload.number=number;insertPayload.code=code}const {data:np,error:r}=await sb.from('rz7_proofs').insert(insertPayload).select().single();if(r)return toast('Não foi possível criar a prova: '+r.message);const {error:qerr}=await sb.rpc('rz7_replace_proof_questions',{p_proof:np.id,p_questions:initialQuestions});if(qerr)return toast(qerr.message)}}toast('Prova salva.');adminSection('proofs')};
+ document.getElementById('pf').onsubmit=async e=>{
+  e.preventDefault();
+  sync();
+  if(!initialQuestions.length)return toast('Adicione pelo menos uma questão.');
+  for(let i=0;i<initialQuestions.length;i++){
+    const q=initialQuestions[i];
+    if(!q.question.trim())return toast('Preencha a questão '+(i+1)+'.');
+    if(q.question_type!=='text'){
+      if(q.options.length<2)return toast('A questão '+(i+1)+' precisa de pelo menos 2 alternativas.');
+      const correctCount=q.options.filter(o=>o.is_correct).length;
+      if(correctCount<1)return toast('Marque pelo menos uma resposta correta na questão '+(i+1)+'.');
+      if(q.question_type==='single'&&correctCount!==1)return toast('Resposta única exige exatamente 1 correta na questão '+(i+1)+'.');
+      if(q.options.some(o=>!o.label.trim()))return toast('Preencha todas as alternativas da questão '+(i+1)+'.');
+    }
+  }
+  const fd=new FormData(e.currentTarget);
+  const seconds=Number(fd.get('time'));
+  if(!Number.isInteger(seconds)||seconds<1||seconds>2592000)return toast('O tempo deve estar entre 1 e 2.592.000 segundos (30 dias).');
+  const payload={name:fd.get('name'),description:fd.get('description'),time_limit_seconds:seconds,participant_limit:fd.get('limit')?Number(fd.get('limit')):null,visibility:fd.get('visibility')};
+  if(p){
+    if(supreme){
+      const newNumber=Number(fd.get('number')),newCode=String(fd.get('code')||'').trim();
+      const {data:dupNum}=await sb.from('rz7_proofs').select('id').eq('number',newNumber).neq('id',p.id).maybeSingle();
+      if(dupNum)return toast('O número '+newNumber+' já está sendo usado por outra prova.');
+      const {data:dupCode}=await sb.from('rz7_proofs').select('id').eq('code',newCode).neq('id',p.id).maybeSingle();
+      if(dupCode)return toast('O código '+newCode+' já está sendo usado por outra prova.');
+      const {error}=await sb.from('rz7_proofs').update({number:newNumber,code:newCode,...payload}).eq('id',p.id);
+      if(error)return toast('Não foi possível salvar a prova: '+error.message);
+    }else{
+      const {error}=await sb.from('rz7_proofs').update(payload).eq('id',p.id);
+      if(error)return toast('Não foi possível salvar a prova: '+error.message);
+    }
+    const {error:qerr}=await sb.rpc('rz7_replace_proof_questions',{p_proof:p.id,p_questions:initialQuestions});
+    if(qerr)return toast(qerr.message);
+  }else{
+    const insertPayload={...payload,created_by:me.id};
+    if(supreme){
+      const number=Number(fd.get('number')),code=String(fd.get('code')||'').trim();
+      const {data:dupNum}=await sb.from('rz7_proofs').select('id').eq('number',number).maybeSingle();
+      if(dupNum)return toast('O número '+number+' já existe. Escolha outro número.');
+      const {data:dupCode}=await sb.from('rz7_proofs').select('id').eq('code',code).maybeSingle();
+      if(dupCode)return toast('O código '+code+' já está sendo usado por outra prova.');
+      insertPayload.number=number;insertPayload.code=code;
+    }
+    const {data:np,error}=await sb.from('rz7_proofs').insert(insertPayload).select().single();
+    if(error)return toast('Não foi possível criar a prova: '+error.message);
+    const {error:qerr}=await sb.rpc('rz7_replace_proof_questions',{p_proof:np.id,p_questions:initialQuestions});
+    if(qerr)return toast(qerr.message);
+  }
+  toast('Prova salva.');
+  adminSection('proofs');
+};
 }
 
 async function templatesAdmin(c){
