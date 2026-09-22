@@ -682,7 +682,7 @@ async function userPermissionEditor(uid){
 }
 async function identityAdmin(c){
   const s=await getSettings();
-  const logo=s.logo_url?.replace(/^"|"$/g,'')||'';
+  const logo=s.logo_url?.replace(/^"|"$|^\\s+|\\s+$/g,'')||'';
   c.innerHTML='<div class="card"><h2>🖼️ IDENTIDADE RZ7</h2>'+
     '<div style="display:grid;gap:14px">'+
       '<div><div class="small muted" style="margin-bottom:7px">LOGOTIPO ATUAL</div><div id="logoPreview" style="min-height:110px;border:1px solid #2d2d2d;border-radius:14px;background:#090909;display:grid;place-items:center;padding:14px">'+
@@ -692,45 +692,68 @@ async function identityAdmin(c){
         '<label>📤 ALTERAR LOGOTIPO<input id="logoFile" type="file" accept="image/png,image/jpeg,image/webp"></label>'+
         '<div class="small muted">PNG, JPG ou WEBP · máximo 5 MB</div>'+
         '<label>🔗 URL DA LOGO (opcional)<input name="logo" value="'+esc(logo)+'" placeholder="https://..."></label>'+
-        '<label>🎨 COR OFICIAL DO CABELO<input name="hair" value="rgb(46, 26, 5)" placeholder="rgb(46, 26, 5)"></label>'+
+        '<label>🎨 COR OFICIAL DO CABELO<input name="hair" value="'+esc(s.hair_color?.replace(/^"|"$|^\\s+|\\s+$/g,'')||'rgb(46, 26, 5)')+'" placeholder="rgb(46, 26, 5)"></label>'+
         '<button class="primary" type="submit">SALVAR IDENTIDADE</button>'+
       '</form>'+
-      '<p class="small muted">A imagem enviada fica armazenada no Supabase e somente o Administrador Supremo pode alterar ou excluir a logo.</p>'+
+      '<p class="small muted">A imagem enviada fica armazenada no Supabase. Somente o Administrador Supremo pode alterar ou excluir a logo.</p>'+
     '</div></div>';
+
   const file=document.getElementById('logoFile');
   const preview=document.getElementById('logoPreview');
+
   if(file)file.onchange=()=>{
     const f=file.files?.[0];
     if(!f)return;
     if(f.size>5*1024*1024){file.value='';return toast('A logo deve ter no máximo 5 MB.')}
+    if(!['image/png','image/jpeg','image/webp'].includes(f.type))return toast('Formato inválido. Use PNG, JPG ou WEBP.');
     const reader=new FileReader();
     reader.onload=()=>{preview.innerHTML='<img src="'+reader.result+'" alt="Pré-visualização" style="max-width:220px;max-height:110px;object-fit:contain">';};
     reader.readAsDataURL(f);
   };
+
   document.getElementById('idform').onsubmit=async e=>{
     e.preventDefault();
     const form=e.currentTarget;
     const f=new FormData(form);
     const image=file?.files?.[0];
     let logoUrl=String(f.get('logo')||'').trim();
+
     if(image){
       if(image.size>5*1024*1024)return toast('A logo deve ter no máximo 5 MB.');
-      const ext=(image.name.split('.').pop()||'png').toLowerCase().replace(/[^a-z0-9]/g,'')||'png';
+      if(!['image/png','image/jpeg','image/webp'].includes(image.type))return toast('Formato inválido. Use PNG, JPG ou WEBP.');
+
+      const ext=image.type==='image/jpeg'?'jpg':image.type==='image/webp'?'webp':'png';
       const path='logo-rz7-'+Date.now()+'-'+Math.random().toString(36).slice(2,8)+'.'+ext;
-      const {error:uploadError}=await sb.storage.from('rz7-identity').upload(path,image,{upsert:false,contentType:image.type||'image/png',cacheControl:'0'});
-      if(uploadError)return toast('Não foi possível enviar a logo: '+uploadError.message);
+      const {error:uploadError}=await sb.storage.from('rz7-identity').upload(path,image,{
+        upsert:false,
+        contentType:image.type,
+        cacheControl:'31536000'
+      });
+      if(uploadError){
+        console.error('RZ7 upload logo:',uploadError);
+        return toast('Não foi possível enviar a logo: '+uploadError.message);
+      }
+
       const {data:pub}=sb.storage.from('rz7-identity').getPublicUrl(path);
-      logoUrl=pub?.publicUrl||'';
+      logoUrl=(pub?.publicUrl||'')+'?v='+Date.now();
     }
+
     if(!logoUrl)return toast('Escolha uma imagem ou informe uma URL para a logo.');
-    for(const [key,value] of [['logo_url',logoUrl],['hair_color',String(f.get('hair')||'rgb(46, 26, 5)')]]){
-      const {error}=await sb.from('rz7_system_settings').upsert({key,value,updated_by:me.id,updated_at:new Date().toISOString()});
-      if(error)return toast(error.message);
+
+    const {error:saveError}=await sb.rpc('rz7_save_identity',{
+      p_logo_url:logoUrl,
+      p_hair_color:String(f.get('hair')||'rgb(46, 26, 5)').trim()
+    });
+    if(saveError){
+      console.error('RZ7 identidade:',saveError);
+      return toast('Não foi possível salvar a identidade: '+saveError.message);
     }
+
     toast('Identidade salva. A nova logo foi aplicada.');
     await home();
   };
 }
+
 async function logsAdmin(c){const {data}=await sb.from('rz7_audit_logs').select('*').order('created_at',{ascending:false}).limit(100);c.innerHTML='<h2>📜 LOGS</h2><div class="list">'+(data||[]).map(x=>'<div class="row"><div><b>'+esc(x.action)+'</b><div class="small muted">'+esc(x.entity_type||'')+' · '+esc(x.entity_id||'')+'</div></div><span class="small muted">'+new Date(x.created_at).toLocaleString('pt-BR')+'</span></div>').join('')+'</div>'}
 async function candidateDash(){
   await loadMe();
