@@ -375,8 +375,8 @@ async function templatesAdmin(c){
     if(error)return toast(error.message);
     const {error:qerr}=await sb.rpc('rz7_replace_proof_questions',{p_proof:p.id,p_questions:modelQuestions});
     if(qerr)return toast(qerr.message);
-    toast('Modelo carregado. Revise e configure a nova prova antes de abrir.');
-    proofForm(p.id);
+    toast('Modelo carregado. A nova prova foi criada com o conteúdo do modelo.');
+    adminSection('proofs');
   });
   c.querySelectorAll('[data-delete-template]').forEach(btn=>btn.onclick=async()=>{
     if(!canDelete)return toast('Você não possui permissão para excluir modelos.');
