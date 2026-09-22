@@ -179,65 +179,38 @@ async function proofsAdmin(c,showArchived=false){
   query=showArchived?query.eq('status','archived'):query.neq('status','archived');
   const {data,error}=await query;
   if(error)return toast(error.message);
+  const canDetails=can('view_proof_details')||supreme;
   const canResults=can('view_all_results')||can('view_own_results')||supreme;
+  const canManageAll=can('manage_proofs')||supreme;
+  const canManageOwn=can('manage_own_proofs')||supreme;
   const canArchive=can('archive_proofs')||supreme;
   const canDelete=can('delete_proofs')||supreme;
   c.innerHTML='<div class="sectionTitle"><h2>📝 PROVAS '+(showArchived?'· ARQUIVADAS':'')+'</h2><div class="actions">'+
     '<button class="ghost" id="archiveList">'+(showArchived?'← PROVAS ATIVAS':'🗄️ VER ARQUIVADAS')+'</button>'+
     (showArchived?'':'<button class="primary" id="newProof">CRIAR NOVA PROVA</button>')+'</div></div>'+
     '<p class="small muted">'+(showArchived?'Provas arquivadas ficam fora da área principal, mas continuam armazenadas para preservar histórico e resultados.':'Provas arquivadas não aparecem nesta lista e não podem receber novos candidatos.')+'</p>'+
-    '<div class="list">'+((data||[]).length?(data||[]).map(p=>'<div class="row"><div><b>'+esc(p.code)+' · '+esc(p.name)+'</b><div class="small muted">'+esc(p.status)+' · '+esc(p.visibility)+' · '+Math.round(p.time_limit_seconds/60)+' min</div></div><div class="actions">'+
-      (!showArchived?'<button class="ghost" data-open="'+p.id+'">'+(p.status==='open'?'FECHAR':'ABRIR')+'</button><button class="ghost" data-edit="'+p.id+'">EDITAR</button>':'')+
-      (canResults?'<button class="ghost" data-results="'+p.id+'">RESULTADOS</button>':'')+
-      (canArchive?(showArchived?'<button class="ghost" data-restore="'+p.id+'">RESTAURAR</button>':'<button class="ghost danger" data-archive="'+p.id+'">ARQUIVAR</button>'):'')+
-      (canDelete&&showArchived?'<button class="ghost danger" data-delete-proof="'+p.id+'">🗑️ EXCLUIR</button>':'')+
-      '</div></div>').join(''):'<div class="card"><p>'+(showArchived?'Nenhuma prova arquivada.':'Nenhuma prova ativa no momento.')+'</p></div>')+'</div>';
-  const list=document.getElementById('archiveList');
-  if(list)list.onclick=()=>proofsAdmin(c,!showArchived);
-  const np=document.getElementById('newProof');if(np)np.onclick=()=>proofForm();
-  c.querySelectorAll('[data-open]').forEach(b=>b.onclick=async()=>{
-    const id=b.dataset.open;
-    const {data:p,error:e}=await sb.from('rz7_proofs').select('status').eq('id',id).single();
-    if(e)return toast(e.message);
-    const st=p.status==='open'?'closed':'open';
-    const upd={status:st};
-    if(st==='open')upd.opened_at=new Date().toISOString();else upd.closed_at=new Date().toISOString();
-    const {error}=await sb.from('rz7_proofs').update(upd).eq('id',id);
-    if(error)return toast(error.message);
-    proofsAdmin(c,showArchived)
-  });
+    '<div class="list">'+((data||[]).length?(data||[]).map(p=>{
+      const own=p.created_by===me?.id;
+      const canManage=canManageAll||(canManageOwn&&own);
+      return '<div class="row"><div><b>'+esc(p.code)+' · '+esc(p.name)+'</b><div class="small muted">'+esc(p.status)+' · '+esc(p.visibility)+' · '+Math.round(p.time_limit_seconds/60)+' min</div><div class="small muted">Criada por: '+(own?'você':'outro instrutor')+'</div></div><div class="actions">'+
+        (canDetails?'<button class="ghost" data-detail-proof="'+p.id+'">🔎 DETALHES</button>':'')+
+        (!showArchived&&canManage?'<button class="ghost" data-open="'+p.id+'">'+(p.status==='open'?'FECHAR':'ABRIR')+'</button><button class="ghost" data-edit="'+p.id+'">EDITAR</button>':'')+
+        (canResults?'<button class="ghost" data-results="'+p.id+'">RESULTADOS</button>':'')+
+        (canArchive?(showArchived?'<button class="ghost" data-restore="'+p.id+'">RESTAURAR</button>':'<button class="ghost danger" data-archive="'+p.id+'">ARQUIVAR</button>'):'')+
+        (canDelete&&showArchived?'<button class="ghost danger" data-delete-proof="'+p.id+'">🗑️ EXCLUIR</button>':'')+
+        '</div></div>';
+    }).join(''):'<div class="card"><p>'+(showArchived?'Nenhuma prova arquivada.':'Nenhuma prova ativa no momento.')+'</p></div>')+'</div>';
+  const list=document.getElementById('archiveList'); if(list)list.onclick=()=>proofsAdmin(c,!showArchived);
+  const np=document.getElementById('newProof'); if(np)np.onclick=()=>proofForm();
+  c.querySelectorAll('[data-detail-proof]').forEach(b=>b.onclick=()=>proofDetail(c,b.dataset.detailProof));
+  c.querySelectorAll('[data-open]').forEach(b=>b.onclick=async()=>{const id=b.dataset.open;const {data:p,error:e}=await sb.from('rz7_proofs').select('status').eq('id',id).single();if(e)return toast(e.message);const st=p.status==='open'?'closed':'open';const upd={status:st};if(st==='open')upd.opened_at=new Date().toISOString();else upd.closed_at=new Date().toISOString();const {error}=await sb.from('rz7_proofs').update(upd).eq('id',id);if(error)return toast(error.message);proofsAdmin(c,showArchived)});
   c.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>proofForm(b.dataset.edit));
   c.querySelectorAll('[data-results]').forEach(b=>b.onclick=()=>proofResults(c,b.dataset.results));
-  c.querySelectorAll('[data-archive]').forEach(b=>b.onclick=async()=>{
-    if(!confirm('Arquivar esta prova? Ela sairá da lista ativa, mas todo o histórico e resultados serão preservados.'))return;
-    const {error}=await sb.rpc('rz7_archive_proof',{p_proof:b.dataset.archive,p_restore:false});
-    if(error)return toast(error.message);
-    toast('Prova arquivada.');
-    proofsAdmin(c,false)
-  });
-  c.querySelectorAll('[data-restore]').forEach(b=>b.onclick=async()=>{
-    const {error}=await sb.rpc('rz7_archive_proof',{p_proof:b.dataset.restore,p_restore:true});
-    if(error)return toast(error.message);
-    toast('Prova restaurada.');
-    proofsAdmin(c,true)
-  });
-  c.querySelectorAll('[data-delete-proof]').forEach(b=>b.onclick=async()=>{
-    const id=b.dataset.deleteProof;
-    if(!confirm('⚠️ EXCLUSÃO PERMANENTE\\n\\nEsta ação apagará definitivamente a prova, questões, alternativas, tentativas, respostas e resultados.\\n\\nA prova precisa estar arquivada e NÃO poderá ser restaurada.\\n\\nDeseja continuar?'))return;
-    const {data:p,error:pe}=await sb.from('rz7_proofs').select('code,name,status').eq('id',id).single();
-    if(pe)return toast(pe.message);
-    if(p.status!=='archived')return toast('A prova precisa estar arquivada antes da exclusão.');
-    const typed=prompt('Digite exatamente o código da prova para confirmar a exclusão permanente:\\n\\n'+p.code);
-    if(typed===null)return toast('Exclusão cancelada.');
-    if(typed.trim()!==p.code)return toast('Exclusão cancelada. O código não confere.');
-    const finalConfirm=confirm('🚨 ÚLTIMA CONFIRMAÇÃO\\n\\nExcluir permanentemente '+p.code+' · '+p.name+'?\\n\\nEsta ação NÃO pode ser desfeita.');
-    if(!finalConfirm)return toast('Exclusão cancelada.');
-    const {error}=await sb.rpc('rz7_delete_proof',{p_proof:id});
-    if(error)return toast(error.message);
-    toast('Prova excluída permanentemente.');
-    proofsAdmin(c,true)
-  });
+  c.querySelectorAll('[data-archive]').forEach(b=>b.onclick=async()=>{if(!confirm('Arquivar esta prova? Ela sairá da lista ativa, mas todo o histórico e resultados serão preservados.'))return;const {error}=await sb.rpc('rz7_archive_proof',{p_proof:b.dataset.archive,p_restore:false});if(error)return toast(error.message);toast('Prova arquivada.');proofsAdmin(c,false)});
+  c.querySelectorAll('[data-restore]').forEach(b=>b.onclick=async()=>{const {error}=await sb.rpc('rz7_archive_proof',{p_proof:b.dataset.restore,p_restore:true});if(error)return toast(error.message);toast('Prova restaurada.');proofsAdmin(c,true)});
+  c.querySelectorAll('[data-delete-proof]').forEach(b=>b.onclick=async()=>{const id=b.dataset.deleteProof;if(!confirm('⚠️ EXCLUSÃO PERMANENTE\\n\\nEsta ação apagará definitivamente a prova, questões, alternativas, tentativas, respostas e resultados.\\n\\nA prova precisa estar arquivada e NÃO poderá ser restaurada.\\n\\nDeseja continuar?'))return;const {data:p,error:pe}=await sb.from('rz7_proofs').select('code,name,status').eq('id',id).single();if(pe)return toast(pe.message);if(p.status!=='archived')return toast('A prova precisa estar arquivada antes da exclusão.');const typed=prompt('Digite exatamente o código da prova para confirmar a exclusão permanente:\\n\\n'+p.code);if(typed===null)return toast('Exclusão cancelada.');if(typed.trim()!==p.code)return toast('Exclusão cancelada. O código não confere.');const finalConfirm=confirm('🚨 ÚLTIMA CONFIRMAÇÃO\\n\\nExcluir permanentemente '+p.code+' · '+p.name+'?\\n\\nEsta ação NÃO pode ser desfeita.');if(!finalConfirm)return toast('Exclusão cancelada.');const {error}=await sb.rpc('rz7_delete_proof',{p_proof:id});if(error)return toast(error.message);toast('Prova excluída permanentemente.');proofsAdmin(c,true)});
 }
+
 async function proofResults(c,pid){
   const {data:p,error:pe}=await sb.from('rz7_proofs').select('id,code,name,status,visibility').eq('id',pid).single();
   if(pe)return toast(pe.message);
