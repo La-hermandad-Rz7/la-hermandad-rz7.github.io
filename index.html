@@ -173,7 +173,7 @@ async function adminSection(x){const c=document.getElementById('adminContent');i
   c.innerHTML='<div class="grid"><div class="card"><h3>📝 PROVAS</h3><b>'+proofs+'</b></div><div class="card"><h3>🛡️ SOLICITAÇÕES</h3><b>'+req+'</b></div><div class="card"><h3>🔐 PEDIDOS DE ACESSO</h3><b>'+accessReq+'</b></div><div class="card"><h3>👁️ EM ANDAMENTO</h3><b>'+attempts+'</b></div></div><div class="card" style="margin-top:14px"><h3>🔐 Nível de acesso</h3><p class="muted">A interface é filtrada por permissão e o banco aplica RLS. A conta máxima é exclusiva do Administrador Supremo.</p></div>';
   return}if(x==='proofs')return proofsAdmin(c);if(x==='templates')return templatesAdmin(c);if(x==='requests')return requestsAdmin(c);if(x==='access')return proofAccessAdmin(c);if(x==='punishments')return punishAdmin(c);if(x==='permissions')return permissionsAdmin(c);if(x==='identity')return identityAdmin(c);if(x==='logs')return logsAdmin(c)}
 async function proofsAdmin(c,showArchived=false){
-  const ownOnly=profile?.account_type==='instructor'&&!can('manage_proofs');
+  const ownOnly=profile?.account_type==='instructor'&&profile?.role_key==='instructors'&&!can('manage_proofs');
   let query=sb.from('rz7_proofs').select('*').order('created_at',{ascending:false});
   if(ownOnly)query=query.eq('created_by',me.id);
   query=showArchived?query.eq('status','archived'):query.neq('status','archived');
