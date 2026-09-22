@@ -716,8 +716,8 @@ async function identityAdmin(c){
     if(image){
       if(image.size>5*1024*1024)return toast('A logo deve ter no máximo 5 MB.');
       const ext=(image.name.split('.').pop()||'png').toLowerCase().replace(/[^a-z0-9]/g,'')||'png';
-      const path='logo-rz7.'+ext;
-      const {error:uploadError}=await sb.storage.from('rz7-identity').upload(path,image,{upsert:true,contentType:image.type||'image/png',cacheControl:'3600'});
+      const path='logo-rz7-'+Date.now()+'-'+Math.random().toString(36).slice(2,8)+'.'+ext;
+      const {error:uploadError}=await sb.storage.from('rz7-identity').upload(path,image,{upsert:false,contentType:image.type||'image/png',cacheControl:'0'});
       if(uploadError)return toast('Não foi possível enviar a logo: '+uploadError.message);
       const {data:pub}=sb.storage.from('rz7-identity').getPublicUrl(path);
       logoUrl=pub?.publicUrl||'';
@@ -727,7 +727,7 @@ async function identityAdmin(c){
       const {error}=await sb.from('rz7_system_settings').upsert({key,value,updated_by:me.id,updated_at:new Date().toISOString()});
       if(error)return toast(error.message);
     }
-    toast('Identidade salva.');
+    toast('Identidade salva. A nova logo foi aplicada.');
     await home();
   };
 }
