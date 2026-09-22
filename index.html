@@ -336,39 +336,51 @@ async function proofForm(id=null){
 }
 
 async function templatesAdmin(c){
-  const canDeleteTemplates=can('manage_templates')||supreme;
+  const canCreate=can('create_templates')||supreme;
+  const canEdit=can('edit_templates')||supreme;
+  const canDelete=can('delete_templates')||supreme;
+  const canUse=can('use_templates')||canCreate||canEdit||canDelete||supreme;
+  if(!canUse)return toast('Você não possui permissão para acessar os modelos.');
   const {data,error}=await sb.from('rz7_proof_templates').select('*').order('created_at',{ascending:false});
   if(error)return toast(error.message);
-  c.innerHTML='<div class="sectionTitle"><h2>💾 MODELOS</h2><button class="primary" id="nt">NOVO MODELO</button></div>'+
-    '<p class="small muted">Modelos são internos da Administração e servem como base para criar novas provas.</p>'+
-    '<div class="list">'+(data||[]).map(t=>'<div class="row"><div><b>'+esc(t.name)+'</b><div class="small muted">'+esc(t.description||'')+'</div></div><div class="actions">'+
-      '<button class="ghost" data-use="'+t.id+'">USAR MODELO</button>'+
-      (canDeleteTemplates?'<button class="ghost danger" data-delete-template="'+t.id+'">🗑️ EXCLUIR</button>':'')+
-      '</div></div>').join('')+'</div>';
-  document.getElementById('nt').onclick=()=>templateForm();
-  c.querySelectorAll('[data-use]').forEach(b=>b.onclick=async()=>{
-    const {data:t,error:te}=await sb.from('rz7_proof_templates').select('*').eq('id',b.dataset.use).single();
+  c.innerHTML='<div class="sectionTitle"><div><h2>💾 MODELOS</h2><p class="small muted">Modelos internos da Administração para criar novas provas.</p></div><div class="actions">'+
+    (canCreate?'<button class="primary" id="nt">💾 NOVO MODELO</button>':'')+'</div></div>'+
+    '<div class="list">'+((data||[]).length?(data||[]).map(t=>'<div class="row"><div><b>'+esc(t.name)+'</b><div class="small muted">'+esc(t.description||'')+'</div></div><div class="actions">'+
+      (canUse?'<button class="ghost" data-use="'+t.id+'">USAR MODELO</button>':'')+
+      (canEdit?'<button class="ghost" data-edit-template="'+t.id+'">✏️ EDITAR</button>':'')+
+      (canDelete?'<button class="ghost danger" data-delete-template="'+t.id+'">🗑️ EXCLUIR</button>':'')+
+      '</div></div>').join(''):'<div class="card"><p>Nenhum modelo cadastrado.</p></div>')+'</div>';
+  const nt=document.getElementById('nt'); if(nt)nt.onclick=()=>templateForm();
+  c.querySelectorAll('[data-edit-template]').forEach(btn=>btn.onclick=async()=>{
+    const {data:t,error:e}=await sb.from('rz7_proof_templates').select('*').eq('id',btn.dataset.editTemplate).single();
+    if(e)return toast(e.message);
+    templateForm(t);
+  });
+  c.querySelectorAll('[data-use]').forEach(btn=>btn.onclick=async()=>{
+    if(!canUse)return toast('Você não possui permissão para usar modelos.');
+    const {data:t,error:te}=await sb.from('rz7_proof_templates').select('*').eq('id',btn.dataset.use).single();
     if(te)return toast(te.message);
     const modelQuestions=t.questions||[];
-    for(let i=0;i<modelQuestions.length;i++){const mq=modelQuestions[i];if((mq.question_type==='single'||mq.question_type==='multiple'||mq.question_type==='choice')&&!(mq.options||[]).some(o=>o.is_correct))return toast('O modelo possui uma questão sem resposta correta definida (questão '+(i+1)+'). Edite o modelo antes de utilizá-lo.');}
-    let identity={number:null,code:null};
-    if(supreme){
-      const latest=(await sb.from('rz7_proofs').select('number').order('number',{ascending:false}).limit(1)).data?.[0]?.number||0;
-      const n=latest+1;
-      identity={number:n,code:'RZ7-'+String(n).padStart(3,'0')};
+    for(let i=0;i<modelQuestions.length;i++){
+      const mq=modelQuestions[i];
+      if((mq.question_type==='single'||mq.question_type==='multiple'||mq.question_type==='choice')&&!(mq.options||[]).some(o=>o.is_correct))
+        return toast('O modelo possui uma questão sem resposta correta definida (questão '+(i+1)+'). Edite o modelo antes de utilizá-lo.');
     }
     const payload={name:t.name,description:t.description,time_limit_seconds:t.time_limit_seconds,participant_limit:t.participant_limit,visibility:t.visibility,created_by:me.id,template_id:t.id};
-    if(supreme){payload.number=identity.number;payload.code=identity.code}
+    if(supreme){
+      const latest=(await sb.from('rz7_proofs').select('number').order('number',{ascending:false}).limit(1)).data?.[0]?.number||0;
+      payload.number=latest+1;payload.code='RZ7-'+String(latest+1).padStart(3,'0');
+    }
     const {data:p,error}=await sb.from('rz7_proofs').insert(payload).select().single();
     if(error)return toast(error.message);
     const {error:qerr}=await sb.rpc('rz7_replace_proof_questions',{p_proof:p.id,p_questions:modelQuestions});
     if(qerr)return toast(qerr.message);
-    toast('Modelo carregado. Revise e configure sua nova prova antes de abrir.');
-    proofForm(p.id)
+    toast('Modelo carregado. Revise e configure a nova prova antes de abrir.');
+    proofForm(p.id);
   });
-  c.querySelectorAll('[data-delete-template]').forEach(b=>b.onclick=async()=>{
-    if(!canDeleteTemplates)return toast('Você não possui permissão para excluir modelos.');
-    const id=b.dataset.deleteTemplate;
+  c.querySelectorAll('[data-delete-template]').forEach(btn=>btn.onclick=async()=>{
+    if(!canDelete)return toast('Você não possui permissão para excluir modelos.');
+    const id=btn.dataset.deleteTemplate;
     const {data:t,error:te}=await sb.from('rz7_proof_templates').select('id,name').eq('id',id).single();
     if(te)return toast(te.message);
     if(!confirm('⚠️ EXCLUIR MODELO\\n\\nExcluir permanentemente o modelo "'+t.name+'"?\\n\\nIsso remove apenas o modelo salvo. Provas já criadas a partir dele não serão apagadas.\\n\\nDeseja continuar?'))return;
@@ -378,13 +390,40 @@ async function templatesAdmin(c){
     templatesAdmin(c);
   });
 }
-function templateForm(){
- let templateQuestions=[{question:'',question_type:'single',points:1,options:[{label:'',is_correct:true},{label:'',is_correct:false}]}];document.getElementById('adminContent').innerHTML='<div class="card"><h2>💾 NOVO MODELO</h2><form id="tf" class="form"><input name="name" placeholder="Nome do modelo" required><textarea name="description" placeholder="Descrição"></textarea><label>⏱️ Tempo limite (minutos)</label><input name="time" type="number" min="1" value="30" required><input name="limit" type="number" min="1" placeholder="Limite de participantes (vazio = sem limite)"><select name="visibility"><option value="public">Pública</option><option value="private">Privada</option></select><div class="sectionTitle" style="margin-top:18px"><h3>❓ QUESTÕES DO MODELO</h3><button type="button" class="ghost" id="addTemplateQuestion">＋ ADICIONAR QUESTÃO</button></div><div id="templateQuestionBuilder"></div><p class="small muted">🔘 Resposta única = 1 correta · ☑️ Múltipla escolha = várias corretas · ✍️ Resposta escrita = correção manual.</p><button class="primary" type="submit">💾 SALVAR MODELO</button></form></div>';const qb=document.getElementById('templateQuestionBuilder'),letter=i=>String.fromCharCode(65+i);
- function sync(){templateQuestions=Array.from(qb.querySelectorAll('.questionCard')).map(card=>({question:card.querySelector('[data-field="question"]').value,question_type:card.querySelector('[data-field="type"]').value,points:Number(card.querySelector('[data-field="points"]').value)||1,options:Array.from(card.querySelectorAll('.optionRow')).map(row=>({label:row.querySelector('[data-field="label"]').value,is_correct:row.querySelector('[data-field="correct"]').checked}))}))}
- function render(){qb.innerHTML=templateQuestions.map((q,qi)=>{const opts=q.question_type==='text'?'':('<div class="small muted" style="margin:8px 0">'+(q.question_type==='multiple'?'ALTERNATIVAS — marque todas as corretas':'ALTERNATIVAS — marque uma como correta')+'</div><div class="options">'+q.options.map((o,oi)=>'<div class="actions optionRow" data-option="'+oi+'" style="margin:6px 0"><input data-field="correct" type="'+(q.question_type==='multiple'?'checkbox':'radio')+'" name="template_correct_'+qi+'" '+(o.is_correct?'checked':'')+'><input data-field="label" value="'+esc(o.label||'')+'" placeholder="Texto da alternativa '+letter(oi)+'" style="flex:1" required><button type="button" class="ghost danger" data-remove-to="'+qi+','+oi+'">✕</button></div>').join('')+'</div><button type="button" class="ghost" data-add-to="'+qi+'">＋ ADICIONAR ALTERNATIVA</button>');return '<div class="card questionCard" data-q="'+qi+'" style="margin-top:12px"><div class="sectionTitle"><h3>QUESTÃO '+(qi+1)+'</h3><button type="button" class="ghost danger" data-remove-tq="'+qi+'">✕ REMOVER</button></div><textarea data-field="question" placeholder="Digite a pergunta..." required>'+esc(q.question||'')+'</textarea><select data-field="type"><option value="single" '+(q.question_type==='single'?'selected':'')+'>🔘 Resposta única</option><option value="multiple" '+(q.question_type==='multiple'?'selected':'')+'>☑️ Múltipla escolha</option><option value="text" '+(q.question_type==='text'?'selected':'')+'>✍️ Resposta escrita</option></select><input data-field="points" type="number" min="0.01" step="0.01" value="'+Number(q.points||1)+'" placeholder="Pontos">'+opts+'</div>'}).join('')}
- render();document.getElementById('addTemplateQuestion').onclick=()=>{sync();templateQuestions.push({question:'',question_type:'single',points:1,options:[{label:'',is_correct:true},{label:'',is_correct:false}]});render()};qb.onchange=e=>{if(e.target.matches('[data-field="type"]')){sync();render()}};qb.onclick=e=>{const rm=e.target.closest('[data-remove-tq]');if(rm){sync();templateQuestions.splice(Number(rm.dataset.removeTq),1);if(!templateQuestions.length)templateQuestions.push({question:'',question_type:'single',points:1,options:[{label:'',is_correct:true},{label:'',is_correct:false}]});render();return}const ro=e.target.closest('[data-remove-to]');if(ro){sync();const [qi,oi]=ro.dataset.removeTo.split(',').map(Number);if(templateQuestions[qi].options.length<=2)return toast('Cada questão precisa ter pelo menos 2 alternativas.');templateQuestions[qi].options.splice(oi,1);if(!templateQuestions[qi].options.some(o=>o.is_correct))templateQuestions[qi].options[0].is_correct=true;render();return}const add=e.target.closest('[data-add-to]');if(add){sync();const qi=Number(add.dataset.addTo);if(templateQuestions[qi].options.length>=6)return toast('Máximo de 6 alternativas por questão.');templateQuestions[qi].options.push({label:'',is_correct:false});render()}};document.getElementById('tf').onsubmit=async e=>{e.preventDefault();sync();if(!templateQuestions.length)return toast('Adicione pelo menos uma questão.');for(let i=0;i<templateQuestions.length;i++){const q=templateQuestions[i];if(!q.question.trim())return toast('Preencha a questão '+(i+1)+'.');if(q.question_type!=='text'){if(q.options.length<2)return toast('A questão '+(i+1)+' precisa de pelo menos 2 alternativas.');const n=q.options.filter(o=>o.is_correct).length;if(!n)return toast('Marque pelo menos uma correta na questão '+(i+1)+'.');if(q.question_type==='single'&&n!==1)return toast('Resposta única exige exatamente 1 correta na questão '+(i+1)+'.');if(q.options.some(o=>!o.label.trim()))return toast('Preencha todas as alternativas da questão '+(i+1)+'.')}}const f=new FormData(e.currentTarget);const {error}=await sb.from('rz7_proof_templates').insert({name:f.get('name'),description:f.get('description'),time_limit_seconds:Number(f.get('time'))*60,participant_limit:f.get('limit')?Number(f.get('limit')):null,visibility:f.get('visibility'),questions:templateQuestions,created_by:me.id});if(error)return toast(error.message);toast('Modelo salvo.');adminSection('templates')};
+function templateForm(existing=null){
+  let templateQuestions=(existing?.questions||[]).map(q=>({question:q.question||'',question_type:q.question_type||'single',points:Number(q.points||1),options:(q.options||[]).map(o=>({label:o.label||'',is_correct:!!o.is_correct}))}));
+  if(!templateQuestions.length)templateQuestions=[{question:'',question_type:'single',points:1,options:[{label:'',is_correct:true},{label:'',is_correct:false}]}];
+  const title=existing?'✏️ EDITAR MODELO':'💾 NOVO MODELO';
+  document.getElementById('adminContent').innerHTML='<div class="card"><div class="sectionTitle"><div><h2>'+title+'</h2><p class="small muted">'+(existing?'Altere o modelo e salve as mudanças.':'Crie um modelo reutilizável para novas provas.')+'</p></div><button type="button" class="ghost" id="backTemplates">← VOLTAR AOS MODELOS</button></div><form id="tf" class="form"><input name="name" placeholder="Nome do modelo" value="'+esc(existing?.name||'')+'" required><textarea name="description" placeholder="Descrição">'+esc(existing?.description||'')+'</textarea><label>⏱️ Tempo limite (minutos)</label><input name="time" type="number" min="1" value="'+Math.max(1,Math.round((existing?.time_limit_seconds||1800)/60))+'" required><input name="limit" type="number" min="1" placeholder="Limite de participantes (vazio = sem limite)" value="'+(existing?.participant_limit||'')+'"><select name="visibility"><option value="public" '+(existing?.visibility!=='private'?'selected':'')+'>Pública</option><option value="private" '+(existing?.visibility==='private'?'selected':'')+'>Privada</option></select><div class="sectionTitle" style="margin-top:18px"><h3>❓ QUESTÕES DO MODELO</h3><button type="button" class="ghost" id="addTemplateQuestion">＋ ADICIONAR QUESTÃO</button></div><div id="templateQuestionBuilder"></div><p class="small muted">🔘 Resposta única = 1 correta · ☑️ Múltipla escolha = várias corretas · ✍️ Resposta escrita = correção manual.</p><div class="actions"><button type="button" class="ghost" id="backTemplates2">← VOLTAR</button><button class="primary" type="submit">💾 '+(existing?'SALVAR ALTERAÇÕES':'SALVAR MODELO')+'</button></div></form></div>';
+  const qb=document.getElementById('templateQuestionBuilder'),letter=i=>String.fromCharCode(65+i);
+  document.getElementById('backTemplates').onclick=()=>adminSection('templates');
+  document.getElementById('backTemplates2').onclick=()=>adminSection('templates');
+  function sync(){templateQuestions=Array.from(qb.querySelectorAll('.questionCard')).map(card=>({question:card.querySelector('[data-field="question"]').value,question_type:card.querySelector('[data-field="type"]').value,points:Number(card.querySelector('[data-field="points"]').value)||1,options:Array.from(card.querySelectorAll('.optionRow')).map(row=>({label:row.querySelector('[data-field="label"]').value,is_correct:row.querySelector('[data-field="correct"]').checked}))}))}
+  function render(){qb.innerHTML=templateQuestions.map((q,qi)=>{const opts=q.question_type==='text'?'':('<div class="small muted" style="margin:8px 0">'+(q.question_type==='multiple'?'ALTERNATIVAS — marque todas as corretas':'ALTERNATIVAS — marque uma como correta')+'</div><div class="options">'+q.options.map((o,oi)=>'<div class="actions optionRow" data-option="'+oi+'" style="margin:6px 0"><input data-field="correct" type="'+(q.question_type==='multiple'?'checkbox':'radio')+'" name="template_correct_'+qi+'" '+(o.is_correct?'checked':'')+'><input data-field="label" value="'+esc(o.label||'')+'" placeholder="Texto da alternativa '+letter(oi)+'" style="flex:1" required><button type="button" class="ghost danger" data-remove-to="'+qi+','+oi+'">✕</button></div>').join('')+'</div><button type="button" class="ghost" data-add-to="'+qi+'">＋ ADICIONAR ALTERNATIVA</button>');return '<div class="card questionCard" data-q="'+qi+'" style="margin-top:12px"><div class="sectionTitle"><h3>QUESTÃO '+(qi+1)+'</h3><button type="button" class="ghost danger" data-remove-tq="'+qi+'">✕ REMOVER</button></div><textarea data-field="question" placeholder="Digite a pergunta..." required>'+esc(q.question||'')+'</textarea><select data-field="type"><option value="single" '+(q.question_type==='single'?'selected':'')+'>🔘 Resposta única</option><option value="multiple" '+(q.question_type==='multiple'?'selected':'')+'>☑️ Múltipla escolha</option><option value="text" '+(q.question_type==='text'?'selected':'')+'>✍️ Resposta escrita</option></select><input data-field="points" type="number" min="0.01" step="0.01" value="'+Number(q.points||1)+'" placeholder="Pontos">'+opts+'</div>'}).join('')}
+  render();
+  document.getElementById('addTemplateQuestion').onclick=()=>{sync();templateQuestions.push({question:'',question_type:'single',points:1,options:[{label:'',is_correct:true},{label:'',is_correct:false}]});render()};
+  qb.onchange=e=>{if(e.target.matches('[data-field="type"]')){sync();render()}};
+  qb.onclick=e=>{
+    const rm=e.target.closest('[data-remove-tq]');
+    if(rm){sync();templateQuestions.splice(Number(rm.dataset.removeTq),1);if(!templateQuestions.length)templateQuestions.push({question:'',question_type:'single',points:1,options:[{label:'',is_correct:true},{label:'',is_correct:false}]});render();return}
+    const ro=e.target.closest('[data-remove-to]');
+    if(ro){sync();const [qi,oi]=ro.dataset.removeTo.split(',').map(Number);if(templateQuestions[qi].options.length<=2)return toast('Cada questão precisa ter pelo menos 2 alternativas.');templateQuestions[qi].options.splice(oi,1);if(!templateQuestions[qi].options.some(o=>o.is_correct))templateQuestions[qi].options[0].is_correct=true;render();return}
+    const add=e.target.closest('[data-add-to]');
+    if(add){sync();const qi=Number(add.dataset.addTo);if(templateQuestions[qi].options.length>=6)return toast('Máximo de 6 alternativas por questão.');templateQuestions[qi].options.push({label:'',is_correct:false});render()}
+  };
+  document.getElementById('tf').onsubmit=async e=>{
+    e.preventDefault();sync();
+    if(!templateQuestions.length)return toast('Adicione pelo menos uma questão.');
+    for(let i=0;i<templateQuestions.length;i++){const q=templateQuestions[i];if(!q.question.trim())return toast('Preencha a questão '+(i+1)+'.');if(q.question_type!=='text'){if(q.options.length<2)return toast('A questão '+(i+1)+' precisa de pelo menos 2 alternativas.');const n=q.options.filter(o=>o.is_correct).length;if(!n)return toast('Marque pelo menos uma correta na questão '+(i+1)+'.');if(q.question_type==='single'&&n!==1)return toast('Resposta única exige exatamente 1 correta na questão '+(i+1)+'.');if(q.options.some(o=>!o.label.trim()))return toast('Preencha todas as alternativas da questão '+(i+1)+'.')}}
+    const f=new FormData(e.currentTarget),payload={name:f.get('name'),description:f.get('description'),time_limit_seconds:Number(f.get('time'))*60,participant_limit:f.get('limit')?Number(f.get('limit')):null,visibility:f.get('visibility'),questions:templateQuestions};
+    let error;
+    if(existing){const r=await sb.from('rz7_proof_templates').update(payload).eq('id',existing.id);error=r.error}
+    else{const r=await sb.from('rz7_proof_templates').insert({...payload,created_by:me.id});error=r.error}
+    if(error)return toast('Não foi possível salvar o modelo: '+error.message);
+    toast(existing?'Modelo atualizado.':'Modelo salvo.');
+    adminSection('templates');
+  };
 }
-
 async function proofAccessAdmin(c){
   const ownOnly=profile?.account_type==='instructor'&&!can('manage_proofs');
   let pq=sb.from('rz7_proofs').select('id,code,name,status,visibility,created_by').eq('visibility','private').order('created_at',{ascending:false});
