@@ -381,9 +381,12 @@ toast('Prova salva.');adminSection('proofs')
   c.querySelectorAll('[data-use]').forEach(b=>b.onclick=async()=>{
     const {data:t,error:te}=await sb.from('rz7_proof_templates').select('*').eq('id',b.dataset.use).single();
     if(te)return toast(te.message);
-    const identity= supreme
-      ? (()=>{const n=(await sb.from('rz7_proofs').select('number').order('number',{ascending:false}).limit(1)).data?.[0]?.number+1||1;return {number:n,code:'RZ7-'+String(n).padStart(3,'0')}})()
-      : {number:null,code:null};
+    let identity={number:null,code:null};
+    if(supreme){
+      const latest=(await sb.from('rz7_proofs').select('number').order('number',{ascending:false}).limit(1)).data?.[0]?.number||0;
+      const n=latest+1;
+      identity={number:n,code:'RZ7-'+String(n).padStart(3,'0')};
+    }
     const payload={name:t.name,description:t.description,time_limit_seconds:t.time_limit_seconds,participant_limit:t.participant_limit,visibility:t.visibility,created_by:me.id,template_id:t.id};
     if(supreme){payload.number=identity.number;payload.code=identity.code}
     const {data:p,error}=await sb.from('rz7_proofs').insert(payload).select().single();
