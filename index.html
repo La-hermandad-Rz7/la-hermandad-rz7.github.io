@@ -211,6 +211,87 @@ async function proofsAdmin(c,showArchived=false){
   c.querySelectorAll('[data-delete-proof]').forEach(b=>b.onclick=async()=>{const id=b.dataset.deleteProof;if(!confirm('⚠️ EXCLUSÃO PERMANENTE\\n\\nEsta ação apagará definitivamente a prova, questões, alternativas, tentativas, respostas e resultados.\\n\\nA prova precisa estar arquivada e NÃO poderá ser restaurada.\\n\\nDeseja continuar?'))return;const {data:p,error:pe}=await sb.from('rz7_proofs').select('code,name,status').eq('id',id).single();if(pe)return toast(pe.message);if(p.status!=='archived')return toast('A prova precisa estar arquivada antes da exclusão.');const typed=prompt('Digite exatamente o código da prova para confirmar a exclusão permanente:\\n\\n'+p.code);if(typed===null)return toast('Exclusão cancelada.');if(typed.trim()!==p.code)return toast('Exclusão cancelada. O código não confere.');const finalConfirm=confirm('🚨 ÚLTIMA CONFIRMAÇÃO\\n\\nExcluir permanentemente '+p.code+' · '+p.name+'?\\n\\nEsta ação NÃO pode ser desfeita.');if(!finalConfirm)return toast('Exclusão cancelada.');const {error}=await sb.rpc('rz7_delete_proof',{p_proof:id});if(error)return toast(error.message);toast('Prova excluída permanentemente.');proofsAdmin(c,true)});
 }
 
+
+async function proofDetail(c,pid){
+  if(!(can('view_proof_details')||supreme))return toast('Você não possui permissão para visualizar os detalhes desta prova.');
+  const {data:p,error:pe}=await sb.from('rz7_proofs').select('*').eq('id',pid).single();
+  if(pe)return toast('Não foi possível carregar a prova: '+pe.message);
+
+  const {data:creator,error:ce}=await sb.from('rz7_profiles').select('user_id,name,roblox,discord,email').eq('user_id',p.created_by).maybeSingle();
+  if(ce)return toast('Não foi possível carregar o criador da prova: '+ce.message);
+
+  const {data:q,error:qe}=await sb.from('rz7_proof_questions').select('id,position,question,points,question_type').eq('proof_id',pid).order('position');
+  if(qe)return toast('Não foi possível carregar as questões: '+qe.message);
+
+  const qids=(q||[]).map(x=>x.id);
+  const {data:o,error:oe}=qids.length
+    ? await sb.from('rz7_proof_options').select('id,question_id,position,label').in('question_id',qids).order('position')
+    : {data:[],error:null};
+  if(oe)return toast('Não foi possível carregar as alternativas: '+oe.message);
+
+  const {data:ca,error:cae}=qids.length
+    ? await sb.from('rz7_proof_correct_answers').select('question_id,option_id').in('question_id',qids)
+    : {data:[],error:null};
+  if(cae)return toast('Não foi possível carregar as respostas corretas: '+cae.message);
+
+  const {data:attempts,error:ae}=await sb.from('rz7_proof_attempts').select('*').eq('proof_id',pid).order('started_at',{ascending:false});
+  if(ae)return toast('Não foi possível carregar os participantes: '+ae.message);
+
+  const candidateIds=[...new Set((attempts||[]).map(a=>a.candidate_id).filter(Boolean))];
+  const {data:candidates,error:ue}=candidateIds.length
+    ? await sb.from('rz7_profiles').select('user_id,name,roblox,discord,email').in('user_id',candidateIds)
+    : {data:[],error:null};
+  if(ue)return toast('Não foi possível carregar os candidatos: '+ue.message);
+
+  const qm=new Map((q||[]).map(x=>[x.id,x]));
+  const om=new Map((o||[]).map(x=>[x.id,x.label]));
+  const cm=new Map((ca||[]).map(x=>[x.question_id,x.option_id]));
+  const userMap=new Map((candidates||[]).map(x=>[x.user_id,x]));
+  const openAttempts=(attempts||[]).filter(a=>a.status==='in_progress').length;
+  const finishedAttempts=(attempts||[]).filter(a=>a.status!=='in_progress').length;
+  const approvedAttempts=(attempts||[]).filter(a=>a.status==='approved').length;
+  const pendingAttempts=(attempts||[]).filter(a=>a.status==='manual_review').length;
+  const createdAt=p.created_at?new Date(p.created_at).toLocaleString('pt-BR'):'—';
+  const creatorName=creator?.name||creator?.email||'Usuário não identificado';
+  const timeMin=Math.max(1,Math.round(Number(p.time_limit_seconds||0)/60));
+
+  const questionHtml=(q||[]).map((qq,i)=>{
+    const opts=(o||[]).filter(x=>x.question_id===qq.id).sort((a,b)=>a.position-b.position);
+    const correctIds=new Set((ca||[]).filter(x=>x.question_id===qq.id).map(x=>x.option_id));
+    const type=qq.question_type==='text'?'✍️ Resposta escrita':qq.question_type==='multiple'?'☑️ Múltipla escolha':'🔘 Resposta única';
+    const optionsHtml=qq.question_type==='text'
+      ? '<div class="small muted" style="margin-top:8px">Correção: manual pelo instrutor autorizado.</div>'
+      : '<div style="display:grid;gap:6px;margin-top:10px">'+opts.map((op,oi)=>
+          '<div class="row" style="padding:9px 11px"><span><b style="color:var(--gold)">'+String.fromCharCode(65+oi)+')</b> '+esc(op.label)+'</span><span class="pill">'+(correctIds.has(op.id)?'✓ CORRETA':'ALTERNATIVA')+'</span></div>'
+        ).join('')+'</div>';
+    return '<div class="card"><div class="sectionTitle"><div><b>Questão '+(i+1)+'</b><div class="small muted">'+type+' · '+Number(qq.points||0)+' ponto(s)</div></div></div><div style="line-height:1.55">'+esc(qq.question)+'</div>'+optionsHtml+'</div>';
+  }).join('');
+
+  const candidateHtml=(attempts||[]).length
+    ? '<div class="list">'+(attempts||[]).map(a=>{
+        const u=userMap.get(a.candidate_id)||{};
+        const status=a.status==='approved'?'🟢 APROVADO':a.status==='failed'?'🔴 REPROVADO':a.status==='failed_timeout'?'⏱️ TEMPO ESGOTADO':a.status==='manual_review'?'🟠 CORREÇÃO PENDENTE':'🟡 EM ANDAMENTO';
+        const started=a.started_at?new Date(a.started_at).toLocaleString('pt-BR'):'—';
+        return '<div class="row"><div><b>'+esc(u.name||'Candidato')+'</b><div class="small muted">Roblox: '+esc(u.roblox||'—')+' · Discord: '+esc(u.discord||'—')+'</div><div class="small muted">'+status+' · Nota: '+esc(a.score??'—')+'% · Início: '+started+'</div></div><button class="ghost" data-attempt-detail="'+a.id+'">DETALHES</button></div>';
+      }).join('')+'</div>'
+    : '<div class="card"><p>Nenhum candidato iniciou esta prova ainda.</p></div>';
+
+  c.innerHTML=
+    '<div class="sectionTitle"><div><h2>🔎 DETALHES DA PROVA</h2><p class="small muted">'+esc(p.code)+' · '+esc(p.name)+'</p></div><button class="ghost" id="backProofDetail">← VOLTAR ÀS PROVAS</button></div>'+
+    '<div class="grid">'+
+      '<div class="card"><h3>🆔 IDENTIFICAÇÃO</h3><p><b>Código:</b> '+esc(p.code||'—')+'</p><p><b>Número:</b> '+esc(p.number??'—')+'</p><p><b>Nome:</b> '+esc(p.name||'—')+'</p></div>'+
+      '<div class="card"><h3>👤 CRIADOR</h3><p><b>'+esc(creatorName)+'</b></p><p class="small muted">Roblox: '+esc(creator?.roblox||'—')+' · Discord: '+esc(creator?.discord||'—')+'</p><p class="small muted">Criada em: '+createdAt+'</p></div>'+
+      '<div class="card"><h3>⚙️ CONFIGURAÇÃO</h3><p><b>Status:</b> '+esc(p.status||'—')+'</p><p><b>Acesso:</b> '+esc(p.visibility||'—')+'</p><p><b>Tempo:</b> '+timeMin+' minuto(s)</p><p><b>Limite:</b> '+esc(p.participant_limit??'Sem limite')+'</p></div>'+
+      '<div class="card"><h3>📊 PARTICIPAÇÃO</h3><p><b>Questões:</b> '+(q||[]).length+'</p><p><b>Participantes:</b> '+(attempts||[]).length+'</p><p><b>Em andamento:</b> '+openAttempts+'</p><p><b>Concluíram:</b> '+finishedAttempts+'</p><p><b>Aprovados:</b> '+approvedAttempts+'</p><p><b>Correção pendente:</b> '+pendingAttempts+'</p></div>'+
+    '</div>'+
+    '<div class="card" style="margin-top:14px"><h3>❓ QUESTÕES DA PROVA</h3><div class="list">'+(questionHtml||'<p>Nenhuma questão cadastrada.</p>')+'</div></div>'+
+    '<div class="card" style="margin-top:14px"><h3>👥 CANDIDATOS E RESULTADOS</h3>'+candidateHtml+'</div>';
+
+  const back=document.getElementById('backProofDetail');
+  if(back)back.onclick=()=>proofsAdmin(c,false);
+  c.querySelectorAll('[data-attempt-detail]').forEach(b=>b.onclick=()=>attemptDetail(c,pid,b.dataset.attemptDetail));
+}
+
 async function proofResults(c,pid){
   const {data:p,error:pe}=await sb.from('rz7_proofs').select('id,code,name,status,visibility').eq('id',pid).single();
   if(pe)return toast(pe.message);
