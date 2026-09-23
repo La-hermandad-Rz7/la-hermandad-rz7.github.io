@@ -173,9 +173,9 @@ async function adminSection(x){const c=document.getElementById('adminContent');i
   c.innerHTML='<div class="grid"><div class="card"><h3>📝 PROVAS</h3><b>'+proofs+'</b></div><div class="card"><h3>🛡️ SOLICITAÇÕES</h3><b>'+req+'</b></div><div class="card"><h3>🔐 PEDIDOS DE ACESSO</h3><b>'+accessReq+'</b></div><div class="card"><h3>👁️ EM ANDAMENTO</h3><b>'+attempts+'</b></div></div><div class="card" style="margin-top:14px"><h3>🔐 Nível de acesso</h3><p class="muted">A interface é filtrada por permissão e o banco aplica RLS. A conta máxima é exclusiva do Administrador Supremo.</p></div>';
   return}if(x==='proofs')return proofsAdmin(c);if(x==='templates')return templatesAdmin(c);if(x==='requests')return requestsAdmin(c);if(x==='access')return proofAccessAdmin(c);if(x==='punishments')return punishAdmin(c);if(x==='permissions')return permissionsAdmin(c);if(x==='identity')return identityAdmin(c);if(x==='logs')return logsAdmin(c)}
 async function proofsAdmin(c,showArchived=false){
-  const ownOnly=profile?.account_type==='instructor'&&profile?.role_key==='instructors'&&!can('manage_proofs');
+  // Todos os cargos de instrutor podem consultar as provas e seus resultados.
+  // A edição/gestão continua limitada pelas permissões específicas abaixo.
   let query=sb.from('rz7_proofs').select('*').order('created_at',{ascending:false});
-  if(ownOnly)query=query.eq('created_by',me.id);
   query=showArchived?query.eq('status','archived'):query.neq('status','archived');
   const {data,error}=await query;
   if(error)return toast(error.message);
@@ -217,7 +217,7 @@ async function proofDetail(c,pid){
   const {data:p,error:pe}=await sb.from('rz7_proofs').select('*').eq('id',pid).single();
   if(pe)return toast('Não foi possível carregar a prova: '+pe.message);
 
-  const {data:creator,error:ce}=await sb.from('rz7_profiles').select('user_id,name,roblox,discord,email').eq('user_id',p.created_by).maybeSingle();
+  const {data:creator,error:ce}=await sb.from('rz7_profiles').select('user_id,name,roblox,discord').eq('user_id',p.created_by).maybeSingle();
   if(ce)return toast('Não foi possível carregar o criador da prova: '+ce.message);
 
   const {data:q,error:qe}=await sb.from('rz7_proof_questions').select('id,position,question,points,question_type').eq('proof_id',pid).order('position');
@@ -239,7 +239,7 @@ async function proofDetail(c,pid){
 
   const candidateIds=[...new Set((attempts||[]).map(a=>a.candidate_id).filter(Boolean))];
   const {data:candidates,error:ue}=candidateIds.length
-    ? await sb.from('rz7_profiles').select('user_id,name,roblox,discord,email').in('user_id',candidateIds)
+    ? await sb.from('rz7_profiles').select('user_id,name,roblox,discord').in('user_id',candidateIds)
     : {data:[],error:null};
   if(ue)return toast('Não foi possível carregar os candidatos: '+ue.message);
 
@@ -252,7 +252,7 @@ async function proofDetail(c,pid){
   const approvedAttempts=(attempts||[]).filter(a=>a.status==='approved').length;
   const pendingAttempts=(attempts||[]).filter(a=>a.status==='manual_review').length;
   const createdAt=p.created_at?new Date(p.created_at).toLocaleString('pt-BR'):'—';
-  const creatorName=creator?.name||creator?.email||'Usuário não identificado';
+  const creatorName=creator?.name||'Usuário não identificado';
   const timeMin=Math.max(1,Math.round(Number(p.time_limit_seconds||0)/60));
 
   const questionHtml=(q||[]).map((qq,i)=>{
@@ -298,7 +298,7 @@ async function proofResults(c,pid){
   const {data:attempts,error:ae}=await sb.from('rz7_proof_attempts').select('*').eq('proof_id',pid).order('started_at',{ascending:false});
   if(ae)return toast(ae.message);
   const ids=(attempts||[]).map(a=>a.candidate_id).filter(Boolean);
-  const {data:profiles,error:profe}=ids.length?await sb.from('rz7_profiles').select('user_id,name,roblox,discord,email').in('user_id',ids):{data:[],error:null};
+  const {data:profiles,error:profe}=ids.length?await sb.from('rz7_profiles').select('user_id,name,roblox,discord').in('user_id',ids):{data:[],error:null};
   if(profe)return toast(profe.message);
   const pm=new Map((profiles||[]).map(x=>[x.user_id,x]));
   const finished=(attempts||[]).filter(a=>a.status!=='in_progress').length;
@@ -317,12 +317,12 @@ async function proofResults(c,pid){
   c.querySelectorAll('[data-detail]').forEach(b=>b.onclick=()=>attemptDetail(c,pid,b.dataset.detail));
 }
 async function attemptDetail(c,pid,aid){
- const {data:a,error:ae}=await sb.from('rz7_proof_attempts').select('*').eq('id',aid).single();if(ae)return toast(ae.message);const {data:p}=await sb.from('rz7_proofs').select('code,name').eq('id',pid).single();const {data:u}=await sb.from('rz7_profiles').select('name,roblox,discord,email').eq('user_id',a.candidate_id).maybeSingle();
+ const {data:a,error:ae}=await sb.from('rz7_proof_attempts').select('*').eq('id',aid).single();if(ae)return toast(ae.message);const {data:p}=await sb.from('rz7_proofs').select('code,name').eq('id',pid).single();const {data:u}=await sb.from('rz7_profiles').select('name,roblox,discord').eq('user_id',a.candidate_id).maybeSingle();
  const {data:q,error:qe}=await sb.from('rz7_proof_questions').select('id,position,question,points,question_type').eq('proof_id',pid).order('position');if(qe)return toast(qe.message);const qids=(q||[]).map(x=>x.id);
  const {data:o}=qids.length?await sb.from('rz7_proof_options').select('id,question_id,position,label').in('question_id',qids):{data:[]};const {data:ca}=qids.length?await sb.from('rz7_proof_correct_answers').select('question_id,option_id').in('question_id',qids):{data:[]};const {data:aa}=await sb.from('rz7_attempt_answers').select('question_id,selected_option_id,answer_text,is_correct,awarded_points,review_note').eq('attempt_id',aid);const {data:mao}=qids.length?await sb.from('rz7_attempt_answer_options').select('question_id,option_id').eq('attempt_id',aid):{data:[]};
  const am=new Map((aa||[]).map(x=>[x.question_id,x.selected_option_id])),cm=new Map((ca||[]).map(x=>[x.question_id,x.option_id])),om=new Map((o||[]).map(x=>[x.id,x.label])),amText=new Map((aa||[]).map(x=>[x.question_id,x.answer_text])),reviewMap=new Map((aa||[]).map(x=>[x.question_id,x])),multiMap=new Map();(mao||[]).forEach(x=>{if(!multiMap.has(x.question_id))multiMap.set(x.question_id,[]);multiMap.get(x.question_id).push(x.option_id)});
  const status=a.status==='approved'?'🟢 APROVADO':a.status==='failed'?'🔴 REPROVADO':a.status==='failed_timeout'?'⏱️ TEMPO ESGOTADO':a.status==='manual_review'?'🟠 AGUARDANDO CORREÇÃO':'🟡 EM ANDAMENTO';
- c.innerHTML='<div class="sectionTitle"><h2>🔎 DETALHES DO RESULTADO</h2><button class="ghost" id="backAttempt">← VOLTAR</button></div><div class="card"><h3>'+esc(u?.name||'Candidato')+'</h3><p class="small muted">Roblox: '+esc(u?.roblox||'—')+' · Discord: '+esc(u?.discord||'—')+' · E-mail: '+esc(u?.email||'—')+'</p><p><b>'+esc(p?.code||'')+' · '+esc(p?.name||'')+'</b><br>'+status+' · Nota: '+esc(a.score??'—')+'% · '+esc(a.correct_count??0)+' acertos · '+esc(a.wrong_count??0)+' erros</p></div><div class="list">'+(q||[]).map((qq,i)=>{const row=reviewMap.get(qq.id)||{},typed=amText.get(qq.id),selected=am.get(qq.id),selectedMulti=multiMap.get(qq.id)||[];const candidateAnswer=qq.question_type==='text'?esc(typed||'Não respondida'):qq.question_type==='multiple'?esc(selectedMulti.map(id=>om.get(id)).filter(Boolean).join(' | ')||'Não respondida'):esc(om.get(selected)||'Não respondida');const correctText=qq.question_type==='text'?'Correção manual':qq.question_type==='multiple'?esc((ca||[]).filter(x=>x.question_id===qq.id).map(x=>om.get(x.option_id)).filter(Boolean).join(' | ')):esc(om.get(cm.get(qq.id))||'—');const reviewBox=qq.question_type==='text'&&a.status==='manual_review'?'<div class="notice" style="margin-top:12px"><b>✍️ CORREÇÃO DA RESPOSTA ESCRITA</b><div class="small muted" style="margin-top:6px">Pontuação máxima: '+Number(qq.points||1)+' ponto(s)</div><div class="form" style="margin-top:10px"><input type="number" min="0" max="'+Number(qq.points||1)+'" step="0.01" data-score="'+qq.id+'" value="'+(row.awarded_points??'')+'" placeholder="Pontuação atribuída"><textarea data-note="'+qq.id+'" placeholder="Observação do instrutor (opcional)">'+esc(row.review_note||'')+'</textarea><button class="primary" data-review="'+qq.id+'">💾 SALVAR CORREÇÃO</button></div></div>':qq.question_type==='text'?'<div class="small muted" style="margin-top:8px">Pontuação atribuída: <b>'+esc(row.awarded_points??'—')+'</b> · '+esc(row.review_note||'Sem observação')+'</div>':'';return '<div class="card"><b>Questão '+(i+1)+' · '+(qq.question_type==='text'?'✍️ Escrita':qq.question_type==='multiple'?'☑️ Múltipla':'🔘 Única')+'</b><div style="margin-top:8px"><div class="small muted">Pergunta</div><div>'+esc(qq.question)+'</div><div class="small muted" style="margin-top:10px">Resposta do candidato</div><div><b>'+candidateAnswer+'</b></div><div class="small muted" style="margin-top:10px">Resposta correta</div><div><b>'+correctText+'</b></div>'+reviewBox+'</div></div>'}).join('')+'</div>';
+ c.innerHTML='<div class="sectionTitle"><h2>🔎 DETALHES DO RESULTADO</h2><button class="ghost" id="backAttempt">← VOLTAR</button></div><div class="card"><h3>'+esc(u?.name||'Candidato')+'</h3><p class="small muted">Roblox: '+esc(u?.roblox||'—')+' · Discord: '+esc(u?.discord||'—')+'</p><p><b>'+esc(p?.code||'')+' · '+esc(p?.name||'')+'</b><br>'+status+' · Nota: '+esc(a.score??'—')+'% · '+esc(a.correct_count??0)+' acertos · '+esc(a.wrong_count??0)+' erros</p></div><div class="list">'+(q||[]).map((qq,i)=>{const row=reviewMap.get(qq.id)||{},typed=amText.get(qq.id),selected=am.get(qq.id),selectedMulti=multiMap.get(qq.id)||[];const candidateAnswer=qq.question_type==='text'?esc(typed||'Não respondida'):qq.question_type==='multiple'?esc(selectedMulti.map(id=>om.get(id)).filter(Boolean).join(' | ')||'Não respondida'):esc(om.get(selected)||'Não respondida');const correctText=qq.question_type==='text'?'Correção manual':qq.question_type==='multiple'?esc((ca||[]).filter(x=>x.question_id===qq.id).map(x=>om.get(x.option_id)).filter(Boolean).join(' | ')):esc(om.get(cm.get(qq.id))||'—');const reviewBox=qq.question_type==='text'&&a.status==='manual_review'?'<div class="notice" style="margin-top:12px"><b>✍️ CORREÇÃO DA RESPOSTA ESCRITA</b><div class="small muted" style="margin-top:6px">Pontuação máxima: '+Number(qq.points||1)+' ponto(s)</div><div class="form" style="margin-top:10px"><input type="number" min="0" max="'+Number(qq.points||1)+'" step="0.01" data-score="'+qq.id+'" value="'+(row.awarded_points??'')+'" placeholder="Pontuação atribuída"><textarea data-note="'+qq.id+'" placeholder="Observação do instrutor (opcional)">'+esc(row.review_note||'')+'</textarea><button class="primary" data-review="'+qq.id+'">💾 SALVAR CORREÇÃO</button></div></div>':qq.question_type==='text'?'<div class="small muted" style="margin-top:8px">Pontuação atribuída: <b>'+esc(row.awarded_points??'—')+'</b> · '+esc(row.review_note||'Sem observação')+'</div>':'';return '<div class="card"><b>Questão '+(i+1)+' · '+(qq.question_type==='text'?'✍️ Escrita':qq.question_type==='multiple'?'☑️ Múltipla':'🔘 Única')+'</b><div style="margin-top:8px"><div class="small muted">Pergunta</div><div>'+esc(qq.question)+'</div><div class="small muted" style="margin-top:10px">Resposta do candidato</div><div><b>'+candidateAnswer+'</b></div><div class="small muted" style="margin-top:10px">Resposta correta</div><div><b>'+correctText+'</b></div>'+reviewBox+'</div></div>'}).join('')+'</div>';
  document.getElementById('backAttempt').onclick=()=>proofResults(c,pid);c.querySelectorAll('[data-review]').forEach(b=>b.onclick=async()=>{const qid=b.dataset.review,score=Number(c.querySelector('[data-score="'+qid+'"]').value),note=c.querySelector('[data-note="'+qid+'"]').value;if(!Number.isFinite(score))return toast('Informe a pontuação.');const {error}=await sb.rpc('rz7_review_written_answer',{p_attempt:aid,p_question:qid,p_awarded_points:score,p_note:note});if(error)return toast(error.message);toast('Correção salva.');attemptDetail(c,pid,aid)});
 }
 
